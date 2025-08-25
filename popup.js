@@ -23,6 +23,7 @@ async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,
 
 async function openFrom(scope, url){
   const t = await getActiveTab();
+  try{ await chrome.storage.session.set({ lastPanelUrl: url }); }catch{}
   if(scope==='tab'){
     await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
     await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });

@@ -3,6 +3,8 @@ const GLOBAL_KEYS = { keep:'sf:globalKeep', url:'sf:globalUrl' };
 const PT_KEY = 'sf:perTabMap';
 const FOLLOW_KEY = 'sf:followState';
 
+let LAST_GLOBAL_URL = null;
+
 async function getGlobal(){ const r = await chrome.storage.local.get([GLOBAL_KEYS.keep, GLOBAL_KEYS.url]); return { keep: !!r[GLOBAL_KEYS.keep], url: r[GLOBAL_KEYS.url] || null }; }
 async function setGlobal(keep, url){ const obj={}; if(typeof keep==='boolean') obj[GLOBAL_KEYS.keep]=keep; if(typeof url==='string' || url===null) obj[GLOBAL_KEYS.url]=url; await chrome.storage.local.set(obj); }
 async function getPerTabMap(){ try{ const r=await chrome.storage.session.get(PT_KEY); return r[PT_KEY]||{}; }catch{ const r2=await chrome.storage.local.get(PT_KEY); return r2[PT_KEY]||{}; } }
@@ -58,7 +60,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     if(msg?.type==='SP_SET_GLOBAL'){
       if(!msg.url) return void sendResponse({ ok:false, error:'Missing url' });
       await setGlobal(true, msg.url);
+      LAST_GLOBAL_URL = msg.url;
       return void sendResponse({ ok:true });
+    }
+    if(msg?.type==='SP_FOCUS_GLOBAL'){
+      try{
+        const url = msg.url;
+        if(!url) return void sendResponse({ ok:false, error:'Missing url' });
+        const winId = sender?.tab?.windowId ?? (await chrome.windows.getCurrent())?.id;
+        if(!winId) return void sendResponse({ ok:false, error:'No window' });
+        await setGlobal(true, url);
+        LAST_GLOBAL_URL = url;
+        await setFollow({ on:false, url:null, lastTabId:null, prev:{} });
+        await chrome.sidePanel.setOptions({ path:url, enabled:true });
+        await chrome.sidePanel.open({ windowId: winId });
+        return void sendResponse({ ok:true });
+      }catch(e){
+        return void sendResponse({ ok:false, error: e && e.message || String(e) });
+      }
     }
     if(msg?.type==='SP_UNLINK_TAB'){
       if(!msg.tabId) return void sendResponse({ ok:false, error:'Missing tabId' });
@@ -68,6 +87,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     if(msg?.type==='SP_CLEAR_GLOBAL_AND_CLOSE'){
       try{
         await setGlobal(false, null);
+        LAST_GLOBAL_URL = null;
         try{ await chrome.sidePanel.setOptions({ enabled:false }); }catch{}
         const tabs = await chrome.tabs.query({});
         let closed = 0;
@@ -159,6 +179,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
 });
 
 async function applyForActive(tabId, windowId){
+  const g = await getGlobal();
+  if(g?.url){
+    if(LAST_GLOBAL_URL !== g.url){
+      try{ await chrome.sidePanel.setOptions({ path:g.url, enabled:true }); LAST_GLOBAL_URL = g.url; }catch{}
+    }
+    try{ await chrome.sidePanel.open({ windowId }); }catch{}
+    return;
+  }else{
+    LAST_GLOBAL_URL = null;
+  }
   const f = await getFollow();
   if(f.on){
     if(f.lastTabId && f.lastTabId !== tabId){
@@ -178,13 +208,8 @@ async function applyForActive(tabId, windowId){
     return;
   }
   const per = await getPerTab(tabId);
-  const g = await getGlobal();
   if(per?.url){
     try{ await chrome.sidePanel.setOptions({ tabId, path: per.url, enabled:true }); await chrome.sidePanel.open({ tabId }); }catch{}
-    return;
-  }
-  if(g.url){
-    try{ await chrome.sidePanel.setOptions({ path: g.url, enabled:true }); await chrome.sidePanel.open({ windowId }); }catch{}
     return;
   }
   try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}

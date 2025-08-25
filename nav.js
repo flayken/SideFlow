@@ -10,6 +10,50 @@
   const ICON_ON = '#ffffff';
   const ICON_OFF = '#8b93a6';
 
+  // track last observed panel URL for focus mode
+  let LAST_URL = null;
+
+  // --- tiny SVG helper (no innerHTML, no '<' in source) ---
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function makeSvg(shapes = []) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2.2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    for (const s of shapes) {
+      const el = document.createElementNS(SVG_NS, s.tag || 'path');
+      for (const [k, v] of Object.entries(s)) {
+        if (k === 'tag') continue;
+        el.setAttribute(k, String(v));
+      }
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  // icons
+  const icoBack   = () => makeSvg([{ d: 'M15 19l-7-7 7-7' }]);
+  const icoFwd    = () => makeSvg([{ d: 'M9 5l7 7-7 7' }]);
+  const icoRef    = () => makeSvg([
+    { d: 'M21 12a9 9 0 1 1-2.64-6.36' },
+    { d: 'M21 3v7h-7' }
+  ]);
+  const icoFollow = () => makeSvg([
+    { tag: 'circle', cx: 12, cy: 12, r: 3 },
+    { d: 'M12 2v4' }, { d: 'M12 18v4' }, { d: 'M2 12h4' }, { d: 'M18 12h4' }
+  ]);
+  const icoFocus  = () => makeSvg([
+    { d: 'M4 4h5' }, { d: 'M6 4v3' }, { d: 'M4 6v-2' },           // TL corner
+    { d: 'M20 4v5' }, { d: 'M20 6h-3' },                          // TR corner
+    { d: 'M4 20v-5' }, { d: 'M6 20h3' },                          // BL corner
+    { d: 'M20 20h-5' }, { d: 'M18 20v-3' }                        // BR corner
+  ]);
+
   function setup() {
     // bar
     const bar = document.createElement('div');
@@ -30,10 +74,11 @@
     });
 
     // minimal icon button
-    const makeBtn = (svg, title, action) => {
+    const makeBtn = (svgFactory, title, action) => {
       const b = document.createElement('button');
       b.title = title;
-      b.innerHTML = svg;
+      const iconNode = svgFactory();
+      b.appendChild(iconNode);
       Object.assign(b.style, {
         all: 'unset',
         cursor: 'pointer',
@@ -47,19 +92,14 @@
       return b;
     };
 
-    // icons (stroke uses currentColor)
-    const icoBack = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg>`;
-    const icoFwd  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>`;
-    const icoRef  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v7h-7"/></svg>`;
-    const icoFollow = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>`;
-
-    const backBtn = makeBtn(icoBack, 'Back', () => history.back());
-    const fwdBtn  = makeBtn(icoFwd,  'Forward', () => history.forward());
-    const refBtn  = makeBtn(icoRef,  'Refresh', () => location.reload());
+    const backBtn   = makeBtn(icoBack,   'Back',   () => history.back());
+    const fwdBtn    = makeBtn(icoFwd,    'Forward',() => history.forward());
+    const refBtn    = makeBtn(icoRef,    'Refresh',() => location.reload());
     const followBtn = makeBtn(icoFollow, 'Follow', () => {});
+    const focusBtn  = makeBtn(icoFocus,  'Focus',  onFocusClick);
 
     // default colors
-    [backBtn, fwdBtn, refBtn, followBtn].forEach(b => {
+    [backBtn, fwdBtn, refBtn, followBtn, focusBtn].forEach(b => {
       b.style.color = ICON_OFF;
       b.addEventListener('mouseenter', () => { if (!b.disabled) b.style.opacity = '0.9'; });
       b.addEventListener('mouseleave', () => { b.style.opacity = '1'; });
@@ -67,7 +107,7 @@
       b.addEventListener('mouseup',    () => { b.style.opacity = '1'; });
     });
 
-    bar.append(backBtn, fwdBtn, refBtn, followBtn);
+    bar.append(backBtn, fwdBtn, refBtn, followBtn, focusBtn);
     document.body.style.marginTop = BAR_H + 'px';
     document.body.prepend(bar);
 
@@ -99,7 +139,12 @@
       setEnabled(backBtn, canBack);
       setEnabled(fwdBtn,  canFwd);
       setEnabled(refBtn,  true);
+      setEnabled(focusBtn, true);
       refreshFollow();
+
+      LAST_URL = location.href;
+      // Optional chaining for safety; ignore if storage/session not available
+      try { chrome.storage?.session?.set({ lastPanelUrl: LAST_URL }); } catch {}
     }
 
     // When we navigate back, we know forward should be available
@@ -125,8 +170,6 @@
 
     // Listen for SPA and BFCache navigations
     window.addEventListener('popstate', () => {
-      // direction unknown; assume forward may exist after a back
-      // browser will correct via Navigation API if available
       updateButtons();
     });
     window.addEventListener('pageshow', updateButtons);
@@ -201,10 +244,22 @@
     setup();
   }
 
-
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
   } else {
     start();
+  }
+
+  async function onFocusClick(){
+    try{
+      let url = LAST_URL;
+      if(!url && chrome.storage?.session){
+        ({ lastPanelUrl: url } = await chrome.storage.session.get('lastPanelUrl'));
+      }
+      url = url || location.href;
+      if(!url) return console.warn('Focus: no URL available');
+      const r = await chrome.runtime.sendMessage({ type:'SP_FOCUS_GLOBAL', url });
+      if(!r?.ok) console.warn('Focus failed:', r?.error);
+    }catch(e){ console.warn('Focus error:', e); }
   }
 })();
