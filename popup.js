@@ -1,26 +1,12 @@
-// SideFlow popup logic (compact favorites, live per-tab list, theme fix)
 const KEY_FAVS = 'sideflow.favorites';
-const KEY_SCOPE = 'sideflow.scope'; // 'tab' | 'global'
-const KEY_THEME = 'sideflow.theme';
-const $ = (sel, root=document) => root.querySelector(sel);
+const KEY_SCOPE = 'sideflow.scope';
+const THEME_KEY = 'sideflow_theme';
 
-// Theme toggle (default to dark)
-(function(){
-  const root = document.documentElement;
-  const saved = localStorage.getItem(KEY_THEME) || 'dark';
-  root.setAttribute('data-theme', saved);
-  const sw = document.getElementById('theme-switch');
-  if(saved==='light') sw?.setAttribute('aria-pressed','true');
-  sw?.addEventListener('click', ()=>{
-    const next = (root.getAttribute('data-theme') === 'light') ? 'dark' : 'light';
-    root.setAttribute('data-theme', next);
-    sw?.setAttribute('aria-pressed', String(next==='light'));
-    localStorage.setItem(KEY_THEME, next);
-  });
-})();
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
 function normalize(s){
-  s=(s||'').trim();
+  s = (s||'').trim();
   if(!s) return null;
   const hasDot = /\./.test(s);
   if(/^https?:\/\//i.test(s) || hasDot){
@@ -29,26 +15,15 @@ function normalize(s){
   }
   return 'https://www.google.com/search?q=' + encodeURIComponent(s);
 }
-function favIcon(u){ try{ const h=new URL(u).host; return 'https://www.google.com/s2/favicons?domain='+encodeURIComponent(h)+'&sz=64'; }catch{return ''; } }
-function hostOf(u){ try{ return new URL(u).host.replace(/^www\./,''); }catch{ return u; } }
-async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
-async function loadFavs(){ const r = await chrome.storage.local.get(KEY_FAVS); return r[KEY_FAVS] || []; }
-async function saveFavs(v){ await chrome.storage.local.set({ [KEY_FAVS]: v }); }
-function toast(msg){ const wrap=document.querySelector('.toast-wrap'); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; wrap.appendChild(t); setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateY(6px)'; },1600); setTimeout(()=> t.remove(), 2100); }
-
-function setScope(val){
-  localStorage.setItem(KEY_SCOPE, val);
-  document.getElementById('scope-tab').setAttribute('aria-pressed', String(val!=='global'));
-  document.getElementById('scope-global').setAttribute('aria-pressed', String(val==='global'));
+function favIcon(u){
+  try{ const h=new URL(u).host; return 'https://www.google.com/s2/favicons?sz=64&domain='+encodeURIComponent(h); }catch{return '';}
 }
-function getScope(){ return localStorage.getItem(KEY_SCOPE) || 'tab'; }
+function labelFrom(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return u; } }
+async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
 
 async function openFrom(scope, url){
-  if(!chrome.sidePanel?.setOptions || !chrome.sidePanel?.open){
-    throw new Error('Side panel API not supported in this browser');
-  }
+  const t = await getActiveTab();
   if(scope==='tab'){
-    const t = await getActiveTab();
     await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
     await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
     await chrome.sidePanel.open({ tabId: t.id });
@@ -58,145 +33,147 @@ async function openFrom(scope, url){
     const win = await chrome.windows.getCurrent();
     await chrome.sidePanel.open({ windowId: win.id });
   }
-  // refresh sideflows list after change
   renderSideflows();
 }
 
-function renderFavs(list, filter=''){
-  const wrap = document.getElementById('fav-wrap');
-  const root = document.getElementById('fav-list');
-  root.innerHTML='';
-  let show = list;
-  if(filter && filter.trim()){
-    const q = filter.toLowerCase();
-    show = list.filter(f => f.url.toLowerCase().includes(q) || hostOf(f.url).toLowerCase().includes(q));
-  }
-  if(!show.length){
-    const empty = document.createElement('div');
-    empty.className='empty';
-    empty.textContent='No favorites yet — type a URL and click Save.';
-    root.appendChild(empty);
-    return;
-  }
-  for(const fav of show){
-    const item = document.createElement('div'); item.className='rowitem';
-    const ico = document.createElement('img'); ico.className='favicon'; ico.src=favIcon(fav.url); ico.alt='';
-    const meta = document.createElement('div'); meta.className='meta';
-    const name = document.createElement('div'); name.className='name'; name.textContent = hostOf(fav.url);
-    const url = document.createElement('div'); url.className='sub'; url.textContent = fav.url;
-    meta.append(name, url);
-    const actions = document.createElement('div'); actions.className='actions';
-    const bTab = document.createElement('button'); bTab.className='btn'; bTab.textContent='Open (tab)';
-    const bGlobal = document.createElement('button'); bGlobal.className='btn primary'; bGlobal.textContent='Open (global)';
-    const bDel = document.createElement('button'); bDel.className='btn danger'; bDel.textContent='Delete';
-    actions.append(bTab,bGlobal,bDel);
-    item.append(ico,meta,actions); root.appendChild(item);
-    meta.addEventListener('click', ()=>{ document.getElementById('url').value=fav.url; });
-    bTab.addEventListener('click', ()=> openFrom('tab', fav.url).then(()=>toast('Opened on this tab')));
-    bGlobal.addEventListener('click', ()=> openFrom('global', fav.url).then(()=>toast('Opened globally')));
-    bDel.addEventListener('click', async ()=>{
-      const next = (await loadFavs()).filter(x=>x.url!==fav.url);
-      await saveFavs(next); renderFavs(next, document.getElementById('filter').value); toast('Removed from favorites');
+async function loadFavs(){ const r = await chrome.storage.local.get(KEY_FAVS); return r[KEY_FAVS] || []; }
+async function saveFavs(v){ await chrome.storage.local.set({ [KEY_FAVS]: v }); }
+
+let favorites = [];
+let scope = 'tab';
+let theme = localStorage.getItem(THEME_KEY) || 'dark';
+
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme', theme);
+  const tgl = $('#themeToggle');
+  tgl.className = 'toggle ' + (theme === 'dark' ? 'dark' : 'light');
+  $('#iconMoon').style.display = theme === 'dark' ? 'block' : 'none';
+  $('#iconSun').style.display  = theme === 'dark' ? 'none'  : 'block';
+  tgl.setAttribute('aria-checked', theme === 'dark');
+}
+
+function setScope(val){
+  scope = val;
+  localStorage.setItem(KEY_SCOPE, val);
+  $$('#scopeSeg button').forEach(b=> b.classList.toggle('active', b.dataset.value===val));
+}
+function getScope(){ return localStorage.getItem(KEY_SCOPE) || 'tab'; }
+
+function toast(msg){
+  const t=document.createElement('div');
+  t.textContent=msg;
+  t.style.position='fixed'; t.style.left='50%'; t.style.bottom='24px'; t.style.transform='translateX(-50%)';
+  t.style.padding='8px 12px'; t.style.borderRadius='14px'; t.style.color='#fff'; t.style.zIndex='9999';
+  t.className='gradient';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),1400);
+}
+
+function renderFavs(){
+  const wrap=$('#favorites');
+  wrap.innerHTML='';
+  for(const f of favorites){
+    const li=document.createElement('div');
+    li.className='fav';
+    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.style.display='none'" /></button>
+      <div class="label" title="${f.label}">${f.label}</div>
+      <button class="remove" aria-label="Remove">×</button>`;
+    $('.tile',li).addEventListener('click', ()=> openFrom(scope, f.url));
+    $('.remove',li).addEventListener('click', async ()=>{
+      favorites = favorites.filter(x=>x.id!==f.id);
+      await saveFavs(favorites);
+      renderFavs();
     });
+    wrap.appendChild(li);
   }
 }
 
 async function renderSideflows(){
-  const list = document.getElementById('list-sideflows'); list.innerHTML='';
+  const wrap = $('#sideflows');
+  wrap.innerHTML='';
   try{
     const win = await chrome.windows.getCurrent();
     const resp = await chrome.runtime.sendMessage({ type:'SP_LIST_LINKED_TABS', windowId: win.id });
     const rows = resp?.tabs || [];
     if(rows.length===0){
-      const empty = document.createElement('div'); empty.className='empty'; empty.textContent='No per‑tab SideFlows on this window yet.'; list.appendChild(empty); return;
+      // Use your logo.png for the empty state icon
+      wrap.innerHTML = `<div style="margin:0 auto 8px; width:36px; height:36px; display:grid; place-items:center; border-radius:10px; border:1px solid var(--border); background:var(--surface); overflow:hidden">
+        <img src="logo.png" alt="" width="18" height="18" style="opacity:.9; display:block;" />
+      </div>No per-tab SideFlows in this window yet.`;
+      wrap.style.textAlign='center';
+      wrap.style.color='var(--muted)';
+      return;
     }
-    for(const r of rows){
-      const item = document.createElement('div'); item.className='rowitem';
-      const ico = document.createElement('img'); ico.className='favicon'; ico.src = r.favicon || ''; ico.alt='';
-      const meta = document.createElement('div'); meta.className='meta';
-      const name = document.createElement('div'); name.className='name'; name.textContent = r.title || '(Tab '+r.id+')';
-      const url = document.createElement('div'); url.className='sub'; url.textContent = r.url;
-      meta.append(name,url);
-      const actions = document.createElement('div'); actions.className='actions';
-      const bGoto = document.createElement('button'); bGoto.className='btn'; bGoto.textContent='Go to tab';
-      const bClose = document.createElement('button'); bClose.className='btn danger'; bClose.textContent='Close panel';
-      actions.append(bGoto,bClose);
-      item.append(ico,meta,actions); list.appendChild(item);
-      bGoto.addEventListener('click', async ()=>{
-        await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId: r.id, windowId: r.windowId });
-      });
-      bClose.addEventListener('click', async ()=>{
-        const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId: r.id });
-        if(res?.ok){ toast('Closed for tab'); renderSideflows(); } else { toast('Could not close'); }
-      });
-    }
+    rows.forEach(r=>{
+      const item=document.createElement('div');
+      item.style.display='flex';
+      item.style.alignItems='center';
+      item.style.gap='10px';
+      item.style.background='var(--chip)';
+      item.style.border='1px solid var(--border)';
+      item.style.borderRadius='14px';
+      item.style.padding='8px 10px';
+      item.style.marginBottom='8px';
+      const ico=document.createElement('img'); ico.src=r.favicon||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
+      const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
+      const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
+      const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
+      meta.append(title,url);
+      const go=document.createElement('button'); go.className='btn ghost'; go.style.padding='6px 8px'; go.style.fontSize='12px'; go.textContent='Go';
+      const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
+      go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
+      close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
+      item.append(ico,meta,go,close);
+      wrap.appendChild(item);
+    });
   }catch(e){
-    const empty = document.createElement('div'); empty.className='empty'; empty.textContent='Unable to load tabs.'; list.appendChild(empty);
+    wrap.textContent='Unable to load tabs.';
   }
 }
 
-(async () => {
-  const urlInput = document.getElementById('url');
-  const useCurrent = document.getElementById('use-current');
-  const bOpen = document.getElementById('open');
-  const bSave = document.getElementById('save');
-  const bCloseGlobal = document.getElementById('close-global');
-  const fInput = document.getElementById('filter');
-  const scopeTab = document.getElementById('scope-tab');
-  const scopeGlobal = document.getElementById('scope-global');
-
-  // Disclosures
-  const dsFav = document.getElementById('ds-favs');
-  const favWrap = document.getElementById('fav-wrap');
-  dsFav.addEventListener('click', ()=>{
-    const open = dsFav.getAttribute('aria-expanded') === 'true';
-    dsFav.setAttribute('aria-expanded', String(!open));
-    favWrap.style.display = open ? 'none' : 'block';
-  });
-  const dsSF = document.getElementById('ds-sideflows');
-  const listSF = document.getElementById('list-sideflows');
-  dsSF.addEventListener('click', ()=>{
-    const open = dsSF.getAttribute('aria-expanded') === 'true';
-    dsSF.setAttribute('aria-expanded', String(!open));
-    listSF.style.display = open ? 'none' : 'grid';
-  });
-
-  scopeTab.addEventListener('click', ()=> setScope('tab'));
-  scopeGlobal.addEventListener('click', ()=> setScope('global'));
-  setScope(getScope());
-
-  useCurrent.addEventListener('click', async ()=>{
-    const t = await getActiveTab();
-    if(t?.url){ urlInput.value = t.url; urlInput.focus(); urlInput.select(); }
-  });
-
-  function apply(){
-    const u = normalize(urlInput.value);
-    if(!u){ toast('Please enter a URL or search.'); urlInput.focus(); return; }
-    openFrom(getScope(), u).catch(e=> toast('Failed: '+(e && e.message || e)));
-  }
-  bOpen.addEventListener('click', apply);
-  urlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') apply(); });
-
-  bSave.addEventListener('click', async ()=>{
-    const u = normalize(urlInput.value);
-    if(!u){ toast('Please enter a URL or search.'); return; }
-    const arr = await loadFavs();
-    if(arr.some(x=>x.url===u)){ toast('Already in favorites'); return; }
-    arr.unshift({ url:u, addedAt:Date.now() });
-    await saveFavs(arr.slice(0,200));
-    renderFavs(arr, fInput.value); toast('Saved to favorites');
-  });
-
-  bCloseGlobal.addEventListener('click', async ()=>{
-    try { const resp = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' });
-      toast(resp?.ok ? ('Global cleared. Disabled on '+(resp.closed||0)+' tabs.') : 'Failed to clear global');
-      renderSideflows();
-    } catch(e){ toast('Error: '+(e && e.message || e)); }
-  });
-
-  fInput.addEventListener('input', async ()=> renderFavs(await loadFavs(), fInput.value));
-
-  renderFavs(await loadFavs());
+(async function init(){
+  favorites = await loadFavs();
+  renderFavs();
+  scope = getScope();
+  setScope(scope);
+  applyTheme();
   renderSideflows();
+
+  $('#themeToggle').addEventListener('click', ()=>{
+    theme = theme==='dark' ? 'light' : 'dark';
+    localStorage.setItem(THEME_KEY, theme);
+    applyTheme();
+  });
+
+  $$('#scopeSeg button').forEach(btn=> btn.addEventListener('click', ()=> setScope(btn.dataset.value)));
+
+  $('#usePageBtn').addEventListener('click', async ()=>{
+    const t = await getActiveTab();
+    if(t?.url){ $('#urlInput').value = t.url; }
+  });
+
+  function doOpen(){
+    const u = normalize($('#urlInput').value);
+    if(!u) return;
+    openFrom(scope, u);
+  }
+  $('#openBtn').addEventListener('click', doOpen);
+  $('#urlInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doOpen(); });
+
+  $('#favBtn').addEventListener('click', async ()=>{
+    const u = normalize($('#urlInput').value);
+    if(!u) return;
+    if(favorites.some(f=>f.url===u)) return;
+    favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
+    await saveFavs(favorites);
+    renderFavs();
+    toast('Added to Favorites');
+  });
+
+  $('#closeAll').addEventListener('click', async ()=>{
+    try{ const resp = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' });
+      toast(resp?.ok ? 'Closed all global panels' : 'Failed to close');
+      renderSideflows();
+    }catch{ toast('Failed to close'); }
+  });
 })();
