@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SideFlow – Side Panel Launcher</title>
+  <link rel="stylesheet" href="popup.css"/>
+</head>
+<body>
+  <div class="container" role="application" aria-label="SideFlow">
+    <header class="header">
+      <div class="logo" aria-hidden="true" title="SideFlow"><img src="logo.png" alt="SideFlow logo"/></div>
+      <div>
+        <div class="title">SideFlow</div>
+        <div class="subtitle">Open any site in the Side Panel</div>
+      </div>
+      <div class="theme" title="Toggle theme">
+        <div class="switch" id="theme-switch" role="button" aria-pressed="false" aria-label="Toggle theme"><div class="knob"></div></div>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="open-controls">
+      <h2 id="open-controls" class="visually-hidden">Open controls</h2>
+      <div class="row" style="margin-bottom:10px">
+        <label class="input grow" aria-label="URL or search">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M21 21l-3.9-3.9M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="#8b93a6" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="url" type="text" placeholder="https://example.com or your search..." autocomplete="off" />
+        </label>
+        <button class="btn ghost" id="use-current" title="Use current page">Use current page</button>
+        <button class="btn primary" id="open">↗ Open</button>
+        <button class="btn accent" id="save">★ Save</button>
+      </div>
+
+      <div class="row" style="justify-content:space-between">
+        <div class="seg" role="group" aria-label="Scope selector">
+          <button id="scope-tab" aria-pressed="true">This tab only</button>
+          <button id="scope-global" aria-pressed="false">Global (all tabs)</button>
+        </div>
+        <button class="btn danger" id="close-global">Close all global panels</button>
+      </div>
+      <div class="help">Press <strong>Enter</strong> to open. We’ll normalize inputs like <em>example.com</em> or perform a web search if it doesn’t look like a URL.</div>
+    </section>
+
+    <section class="section">
+      <div class="disclose" id="ds-sideflows" aria-expanded="true">
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 4l8 8-8 8" />
+        </svg>
+        <h3 style="margin:0">Open SideFlows (this window)</h3>
+      </div>
+      <div id="list-sideflows" class="list" style="margin-top:8px"></div>
+    </section>
+
+    <section class="section">
+      <div class="fav-header">
+        <div class="disclose" id="ds-favs" aria-expanded="false">
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4l8 8-8 8"/></svg>
+          <h3 style="margin:0">Favorites</h3>
+        </div>
+        <label class="input filter" aria-label="Filter favorites">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="#8b93a6" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="filter" type="text" placeholder="Filter favorites..." autocomplete="off" />
+        </label>
+      </div>
+      <div id="fav-wrap" style="display:none">
+        <div id="fav-list" class="list" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast-wrap" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="popup.js"></script>
+  <script>
+    (function(){
+      const KEY = 'sideflow.theme';
+      const root = document.documentElement;
+      const saved = localStorage.getItem(KEY) || 'dark';
+      root.setAttribute('data-theme', saved);
+      const sw = document.getElementById('theme-switch');
+      if(saved==='light') sw && sw.setAttribute('aria-pressed','true');
+      if (sw){
+        sw.addEventListener('click', ()=>{
+          const next = (root.getAttribute('data-theme') === 'light') ? 'dark' : 'light';
+          root.setAttribute('data-theme', next);
+          sw.setAttribute('aria-pressed', String(next==='light'));
+          localStorage.setItem(KEY, next);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
