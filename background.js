@@ -1,6 +1,7 @@
 // SideFlow background worker
 const GLOBAL_KEYS = { keep:'sf:globalKeep', url:'sf:globalUrl' };
 const PT_KEY = 'sf:perTabMap';
+const FOLLOW_KEY = 'sf:followState';
 
 async function getGlobal(){ const r = await chrome.storage.local.get([GLOBAL_KEYS.keep, GLOBAL_KEYS.url]); return { keep: !!r[GLOBAL_KEYS.keep], url: r[GLOBAL_KEYS.url] || null }; }
 async function setGlobal(keep, url){ const obj={}; if(typeof keep==='boolean') obj[GLOBAL_KEYS.keep]=keep; if(typeof url==='string' || url===null) obj[GLOBAL_KEYS.url]=url; await chrome.storage.local.set(obj); }
@@ -9,6 +10,29 @@ async function setPerTabMap(map){ try{ await chrome.storage.session.set({ [PT_KE
 async function setPerTab(tabId, url){ const map=await getPerTabMap(); map[String(tabId)]={ url, keep:true }; await setPerTabMap(map); }
 async function unlinkTab(tabId){ const map=await getPerTabMap(); const had=!!map[String(tabId)]; delete map[String(tabId)]; await setPerTabMap(map); return had; }
 async function getPerTab(tabId){ const map=await getPerTabMap(); return map[String(tabId)]||null; }
+
+async function getFollow(){
+  try{
+    const r = await chrome.storage.session.get(FOLLOW_KEY);
+    return r[FOLLOW_KEY] || { on:false, url:null, lastTabId:null, prev:{} };
+  }catch{
+    const r2 = await chrome.storage.local.get(FOLLOW_KEY);
+    return r2[FOLLOW_KEY] || { on:false, url:null, lastTabId:null, prev:{} };
+  }
+}
+async function setFollow(state){
+  try{ await chrome.storage.session.set({ [FOLLOW_KEY]: state }); }
+  catch{ await chrome.storage.local.set({ [FOLLOW_KEY]: state }); }
+}
+
+async function activeTabId(){
+  try{
+    const [t] = await chrome.tabs.query({ active:true, lastFocusedWindow:true });
+    return t?.id || null;
+  }catch{
+    return null;
+  }
+}
 
 async function listLinkedTabs(windowId){
   const map = await getPerTabMap();
@@ -67,6 +91,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
       const tabs = await listLinkedTabs(msg.windowId);
       return void sendResponse({ ok:true, tabs: tabs.map(t=>({ id:t.id, windowId:t.windowId, title:t.title, url:t.url, index:t.index, favicon: t.favIconUrl })) });
     }
+    if(msg?.type==='SP_FOLLOW_START'){
+      if(!msg.url){ return void sendResponse({ ok:false, error:'Missing url' }); }
+      let tabId = sender?.tab?.id;
+      if(!tabId) tabId = await activeTabId();
+      if(!tabId) return void sendResponse({ ok:false, error:'No tab' });
+      const f = await getFollow();
+      f.on = true;
+      f.url = msg.url;
+      f.lastTabId = tabId;
+      f.prev = {};
+      const per = await getPerTab(tabId);
+      f.prev[String(tabId)] = per ? { url: per.url } : null;
+      await setFollow(f);
+      return void sendResponse({ ok:true });
+    }
+    if(msg?.type==='SP_FOLLOW_STOP'){
+      let tabId = sender?.tab?.id;
+      if(!tabId) tabId = await activeTabId();
+      if(!tabId) return void sendResponse({ ok:false, error:'No tab' });
+      const f = await getFollow();
+      const followUrl = f.url;
+      for(const [idStr, prev] of Object.entries(f.prev||{})){
+        const id = parseInt(idStr,10);
+        if(id === tabId) continue;
+        try{
+          if(prev && prev.url){ await chrome.sidePanel.setOptions({ tabId:id, path:prev.url, enabled:true }); }
+          else{ await chrome.sidePanel.setOptions({ tabId:id, enabled:false }); }
+        }catch{}
+      }
+      await setPerTab(tabId, followUrl);
+      await setFollow({ on:false, url:null, lastTabId:null, prev:{} });
+      return void sendResponse({ ok:true });
+    }
+    if(msg?.type==='SP_FOLLOW_INFO'){
+      let tabId = sender?.tab?.id;
+      if(!tabId) tabId = await activeTabId();
+      const f = await getFollow();
+      const replacing = !!(f.prev && f.prev[String(tabId)]);
+      return void sendResponse({ ok:true, follow: f, replacing });
+    }
+    if(msg?.type==='SP_FOLLOW_UPDATE_URL'){
+      if(!msg.url) return void sendResponse({ ok:false, error:'Missing url' });
+      const f = await getFollow();
+      if(f.on){ f.url = msg.url; await setFollow(f); }
+      return void sendResponse({ ok:true });
+    }
     if(msg?.type==='SP_CLOSE_TAB_PANEL'){
       if(!msg.tabId) return void sendResponse({ ok:false, error:'Missing tabId' });
       try{
@@ -89,6 +159,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
 });
 
 async function applyForActive(tabId, windowId){
+  const f = await getFollow();
+  if(f.on){
+    if(f.lastTabId && f.lastTabId !== tabId){
+      const prev = f.prev[String(f.lastTabId)];
+      try{
+        if(prev && prev.url){ await chrome.sidePanel.setOptions({ tabId:f.lastTabId, path:prev.url, enabled:true }); }
+        else{ await chrome.sidePanel.setOptions({ tabId:f.lastTabId, enabled:false }); }
+      }catch{}
+    }
+    if(!f.prev[String(tabId)]){
+      const perExisting = await getPerTab(tabId);
+      f.prev[String(tabId)] = perExisting ? { url: perExisting.url } : null;
+    }
+    try{ await chrome.sidePanel.setOptions({ tabId, path:f.url, enabled:true }); await chrome.sidePanel.open({ tabId }); }catch{}
+    f.lastTabId = tabId;
+    await setFollow(f);
+    return;
+  }
   const per = await getPerTab(tabId);
   const g = await getGlobal();
   if(per?.url){
@@ -106,4 +194,13 @@ chrome.windows.onFocusChanged.addListener(async (windowId)=>{
   if(windowId === chrome.windows.WINDOW_ID_NONE) return;
   try{ const [tab] = await chrome.tabs.query({active:true, windowId}); if(tab) await applyForActive(tab.id, windowId); }catch{}
 });
-chrome.tabs.onRemoved.addListener(async (tabId)=>{ await unlinkTab(tabId); });
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab)=>{
+  if(changeInfo.status==='complete' && tab?.active){
+    await applyForActive(tabId, tab.windowId);
+  }
+});
+chrome.tabs.onRemoved.addListener(async (tabId)=>{
+  await unlinkTab(tabId);
+  const f = await getFollow();
+  if(f.prev && f.prev[String(tabId)]){ delete f.prev[String(tabId)]; await setFollow(f); }
+});
