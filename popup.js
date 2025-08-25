@@ -1,179 +1,183 @@
+// SideFlow popup logic (compact favorites, live per-tab list, theme fix)
+const KEY_FAVS = 'sideflow.favorites';
+const KEY_SCOPE = 'sideflow.scope'; // 'tab' | 'global'
+const $ = (sel, root=document) => root.querySelector(sel);
 
-// popup.js — user-gesture safe operations
-const $ = (s, r=document)=> r.querySelector(s);
-const $$ = (s, r=document)=> Array.from(r.querySelectorAll(s));
-
-const KEY_GLOBAL = 'sf:globalUrl';
-const TAB_PREFIX = 'sf:tab:'; // session key per tab
-const FAVS = 'sf:favs';
-const SCOPE = 'sf:scope';
-
-function toast(msg){
-  const wrap = $('.toast-wrap');
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  wrap.appendChild(t);
-  setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateY(6px)'; }, 1600);
-  setTimeout(()=> t.remove(), 2100);
-}
-
-function toURL(value){
-  if(!value) return null;
-  const v = value.trim();
-  if(!v) return null;
-  try { new URL(v); return v; } catch(e){}
-  if(/^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]{2,}(\:\d+)?(\/.*)?$/.test(v)){
-    return 'https://' + v;
+function normalize(s){
+  s=(s||'').trim();
+  if(!s) return null;
+  const hasDot = /\./.test(s);
+  if(/^https?:\/\//i.test(s) || hasDot){
+    if(!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    try{ return new URL(s).toString(); }catch{}
   }
-  return 'https://www.google.com/search?q=' + encodeURIComponent(v);
+  return 'https://www.google.com/search?q=' + encodeURIComponent(s);
 }
+function favIcon(u){ try{ const h=new URL(u).host; return 'https://www.google.com/s2/favicons?domain='+encodeURIComponent(h)+'&sz=64'; }catch{return ''; } }
+function hostOf(u){ try{ return new URL(u).host.replace(/^www\./,''); }catch{ return u; } }
+async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
+async function loadFavs(){ const r = await chrome.storage.local.get(KEY_FAVS); return r[KEY_FAVS] || []; }
+async function saveFavs(v){ await chrome.storage.local.set({ [KEY_FAVS]: v }); }
+function toast(msg){ const wrap=document.querySelector('.toast-wrap'); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; wrap.appendChild(t); setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateY(6px)'; },1600); setTimeout(()=> t.remove(), 2100); }
 
 function setScope(val){
-  const isGlobal = val === 'global';
-  $('#scope-tab').setAttribute('aria-pressed', String(!isGlobal));
-  $('#scope-global').setAttribute('aria-pressed', String(isGlobal));
-  localStorage.setItem(SCOPE, val);
+  localStorage.setItem(KEY_SCOPE, val);
+  document.getElementById('scope-tab').setAttribute('aria-pressed', String(val!=='global'));
+  document.getElementById('scope-global').setAttribute('aria-pressed', String(val==='global'));
+}
+function getScope(){ return localStorage.getItem(KEY_SCOPE) || 'tab'; }
+
+async function openFrom(scope, url){
+  const t = await getActiveTab();
+  if(scope==='tab'){
+    await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
+    await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
+    await chrome.sidePanel.open({ tabId: t.id });
+  }else{
+    await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
+    await chrome.sidePanel.setOptions({ path:url, enabled:true });
+    const win = await chrome.windows.getCurrent();
+    await chrome.sidePanel.open({ windowId: win.id });
+  }
+  // refresh sideflows list after change
+  renderSideflows();
 }
 
-$('#scope-tab').addEventListener('click', ()=> setScope('tab'));
-$('#scope-global').addEventListener('click', ()=> setScope('global'));
-setScope(localStorage.getItem(SCOPE) || 'tab');
-
-$('#use-current').addEventListener('click', ()=>{
-  // Use active tab URL
-  chrome.tabs.query({active:true, currentWindow:true}).then(tabs=>{
-    if(tabs[0]?.url){ const u = new URL(tabs[0].url); $('#url').value = u.origin; }
-  });
-});
-
-async function openNow(){
-  const input = $('#url').value;
-  const norm = toURL(input);
-  if(!norm){ toast('Please enter a URL or search.'); $('#url').focus(); return; }
-  const scope = localStorage.getItem(SCOPE) || 'tab';
-  const [tab] = await chrome.tabs.query({active:true, currentWindow:true});
-  if(!tab){ toast('No active tab.'); return; }
-
-  try{
-    if(scope === 'global'){
-      await chrome.storage.local.set({[KEY_GLOBAL]: norm});
-    }else{
-      await chrome.storage.session.set({[TAB_PREFIX + tab.id]: norm});
-    }
-    // Immediately apply + open on this tab — this is a user gesture (click/Enter)
-    await chrome.sidePanel.setOptions({tabId: tab.id, path: norm, enabled: true});
-    await chrome.sidePanel.open({tabId: tab.id});
-    toast('Opening in side panel…');
-    renderSideflows();
-  }catch(e){
-    const m = chrome.runtime.lastError?.message || String(e.message || e);
-    toast(m);
-    console.warn('SideFlow open error:', m);
+function renderFavs(list, filter=''){
+  const wrap = document.getElementById('fav-wrap');
+  const root = document.getElementById('fav-list');
+  root.innerHTML='';
+  let show = list;
+  if(filter && filter.trim()){
+    const q = filter.toLowerCase();
+    show = list.filter(f => f.url.toLowerCase().includes(q) || hostOf(f.url).toLowerCase().includes(q));
   }
-}
-$('#open').addEventListener('click', openNow);
-$('#url').addEventListener('keydown', (e)=>{ if(e.key==='Enter') openNow(); });
-
-// Favorites
-function readFavs(){ try{return JSON.parse(localStorage.getItem(FAVS)||'[]');}catch{ return []; } }
-function writeFavs(v){ localStorage.setItem(FAVS, JSON.stringify(v)); }
-
-function faviconFor(u){ try{ const {origin} = new URL(u); return origin + '/favicon.ico'; }catch{ return ''; } }
-
-function nameFromUrl(u){ try{ const url = new URL(u); return url.hostname.replace('www.',''); }catch{ return u; } }
-
-function renderFavs(){
-  const wrap = $('#fav-list');
-  wrap.innerHTML = '';
-  const q = ($('#filter').value || '').trim().toLowerCase();
-  const favs = readFavs();
-  const vis = favs.filter(f=> !q || f.name.toLowerCase().includes(q) || f.url.toLowerCase().includes(q));
-  if(vis.length===0){
-    const e = document.createElement('div'); e.className='empty'; e.textContent='No favorites yet — type a URL and click Save.'; wrap.appendChild(e); return;
+  if(!show.length){
+    const empty = document.createElement('div');
+    empty.className='empty';
+    empty.textContent='No favorites yet — type a URL and click Save.';
+    root.appendChild(empty);
+    return;
   }
-  for(const f of vis){
-    const row = document.createElement('div'); row.className='rowitem';
-    const ico = document.createElement('img'); ico.className='favicon'; ico.src=faviconFor(f.url); ico.alt='';
+  for(const fav of show){
+    const item = document.createElement('div'); item.className='rowitem';
+    const ico = document.createElement('img'); ico.className='favicon'; ico.src=favIcon(fav.url); ico.alt='';
     const meta = document.createElement('div'); meta.className='meta';
-    const name = document.createElement('div'); name.className='name'; name.textContent=f.name;
-    const sub = document.createElement('div'); sub.className='sub'; sub.textContent=f.url;
-    meta.append(name, sub);
-    const acts = document.createElement('div'); acts.className='actions';
-    const openTab = document.createElement('button'); openTab.className='btn icon ghost'; openTab.textContent='↗'; openTab.title='Open in this tab';
-    openTab.addEventListener('click', ()=>{ $('#url').value = f.url; setScope('tab'); openNow(); });
-    const openGlobal = document.createElement('button'); openGlobal.className='btn icon primary'; openGlobal.textContent='🌐'; openGlobal.title='Open as global';
-    openGlobal.addEventListener('click', ()=>{ $('#url').value = f.url; setScope('global'); openNow(); });
-    const del = document.createElement('button'); del.className='btn icon danger'; del.textContent='✕'; del.title='Remove';
-    del.addEventListener('click', ()=>{ writeFavs(readFavs().filter(x=>x.id!==f.id)); renderFavs(); toast('Removed from favorites'); });
-    acts.append(openTab, openGlobal, del);
-    row.append(ico, meta, acts);
-    wrap.appendChild(row);
-  }
-}
-$('#save').addEventListener('click', ()=>{
-  const norm = toURL($('#url').value);
-  if(!norm){ toast('Please enter a URL.'); return; }
-  const favs = readFavs();
-  if(favs.some(f=> f.url===norm)){ toast('Already in favorites.'); return; }
-  favs.unshift({id: Math.random().toString(36).slice(2), url:norm, name: nameFromUrl(norm)});
-  writeFavs(favs); renderFavs(); toast('Saved to favorites');
-});
-$('#filter').addEventListener('input', renderFavs);
-
-// Disclosures
-function bindDisclosure(id, targetSel){
-  const d = $(id); const target = $(targetSel);
-  const apply = ()=>{ const open = d.getAttribute('aria-expanded')==='true'; target.style.display = open? 'block':'none'; };
-  d.addEventListener('click', ()=>{ const open = d.getAttribute('aria-expanded')==='true'; d.setAttribute('aria-expanded', String(!open)); apply(); });
-  apply();
-}
-bindDisclosure('#ds-favs', '#fav-wrap');
-
-// Close all global panels
-$('#close-global').addEventListener('click', async ()=>{
-  await chrome.storage.local.remove(KEY_GLOBAL);
-  // If current tab doesn't have a per-tab mapping, disable it
-  const [tab] = await chrome.tabs.query({active:true, currentWindow:true});
-  const m = await chrome.storage.session.get(TAB_PREFIX + tab.id);
-  if(!m[TAB_PREFIX + tab.id]){
-    try{ await chrome.sidePanel.setOptions({tabId: tab.id, enabled:false, path:'fallback.html'});}catch{}
-  }
-  toast('Cleared global panel.');
-});
-
-// Sideflows list (per-tab in this window)
-async function renderSideflows(){
-  const list = $('#list-sideflows');
-  list.innerHTML = '';
-  const resp = await chrome.runtime.sendMessage({type:'SF_LIST_WINDOW'}).catch(()=>null);
-  const rows = resp?.rows || [];
-  if(rows.length===0){
-    const e = document.createElement('div'); e.className='empty'; e.textContent='No per-tab SideFlows in this window yet.'; list.appendChild(e); return;
-  }
-  for(const r of rows){
-    const row = document.createElement('div'); row.className='rowitem';
-    const ico = document.createElement('div'); ico.className='favicon';
-    const meta = document.createElement('div'); meta.className='meta';
-    const name = document.createElement('div'); name.className='name'; name.textContent = r.title || r.url;
-    const sub = document.createElement('div'); sub.className='sub'; sub.textContent = r.url;
-    meta.append(name, sub);
-    const acts = document.createElement('div'); acts.className='actions';
-    const focusBtn = document.createElement('button'); focusBtn.className='btn icon ghost'; focusBtn.textContent='👁'; focusBtn.title='Go to tab';
-    focusBtn.addEventListener('click', async ()=>{ await chrome.tabs.update(r.tabId, {active:true}); });
-    const removeBtn = document.createElement('button'); removeBtn.className='btn icon danger'; removeBtn.textContent='✕'; removeBtn.title='Remove mapping';
-    removeBtn.addEventListener('click', async ()=>{
-      await chrome.storage.session.remove(TAB_PREFIX + r.tabId);
-      toast('Removed mapping');
-      renderSideflows();
+    const name = document.createElement('div'); name.className='name'; name.textContent = hostOf(fav.url);
+    const url = document.createElement('div'); url.className='sub'; url.textContent = fav.url;
+    meta.append(name, url);
+    const actions = document.createElement('div'); actions.className='actions';
+    const bTab = document.createElement('button'); bTab.className='btn'; bTab.textContent='Open (tab)';
+    const bGlobal = document.createElement('button'); bGlobal.className='btn primary'; bGlobal.textContent='Open (global)';
+    const bDel = document.createElement('button'); bDel.className='btn danger'; bDel.textContent='Delete';
+    actions.append(bTab,bGlobal,bDel);
+    item.append(ico,meta,actions); root.appendChild(item);
+    meta.addEventListener('click', ()=>{ document.getElementById('url').value=fav.url; });
+    bTab.addEventListener('click', ()=> openFrom('tab', fav.url).then(()=>toast('Opened on this tab')));
+    bGlobal.addEventListener('click', ()=> openFrom('global', fav.url).then(()=>toast('Opened globally')));
+    bDel.addEventListener('click', async ()=>{
+      const next = (await loadFavs()).filter(x=>x.url!==fav.url);
+      await saveFavs(next); renderFavs(next, document.getElementById('filter').value); toast('Removed from favorites');
     });
-    acts.append(focusBtn, removeBtn);
-    row.append(ico, meta, acts);
-    list.appendChild(row);
   }
 }
 
-// init
-renderFavs();
-renderSideflows();
+async function renderSideflows(){
+  const list = document.getElementById('list-sideflows'); list.innerHTML='';
+  try{
+    const win = await chrome.windows.getCurrent();
+    const resp = await chrome.runtime.sendMessage({ type:'SP_LIST_LINKED_TABS', windowId: win.id });
+    const rows = resp?.tabs || [];
+    if(rows.length===0){
+      const empty = document.createElement('div'); empty.className='empty'; empty.textContent='No per‑tab SideFlows on this window yet.'; list.appendChild(empty); return;
+    }
+    for(const r of rows){
+      const item = document.createElement('div'); item.className='rowitem';
+      const ico = document.createElement('img'); ico.className='favicon'; ico.src = r.favicon || ''; ico.alt='';
+      const meta = document.createElement('div'); meta.className='meta';
+      const name = document.createElement('div'); name.className='name'; name.textContent = r.title || '(Tab '+r.id+')';
+      const url = document.createElement('div'); url.className='sub'; url.textContent = r.url;
+      meta.append(name,url);
+      const actions = document.createElement('div'); actions.className='actions';
+      const bGoto = document.createElement('button'); bGoto.className='btn'; bGoto.textContent='Go to tab';
+      const bClose = document.createElement('button'); bClose.className='btn danger'; bClose.textContent='Close panel';
+      actions.append(bGoto,bClose);
+      item.append(ico,meta,actions); list.appendChild(item);
+      bGoto.addEventListener('click', async ()=>{
+        await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId: r.id, windowId: r.windowId });
+      });
+      bClose.addEventListener('click', async ()=>{
+        const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId: r.id });
+        if(res?.ok){ toast('Closed for tab'); renderSideflows(); } else { toast('Could not close'); }
+      });
+    }
+  }catch(e){
+    const empty = document.createElement('div'); empty.className='empty'; empty.textContent='Unable to load tabs.'; list.appendChild(empty);
+  }
+}
 
+(async () => {
+  const urlInput = document.getElementById('url');
+  const useCurrent = document.getElementById('use-current');
+  const bOpen = document.getElementById('open');
+  const bSave = document.getElementById('save');
+  const bCloseGlobal = document.getElementById('close-global');
+  const fInput = document.getElementById('filter');
+  const scopeTab = document.getElementById('scope-tab');
+  const scopeGlobal = document.getElementById('scope-global');
+
+  // Disclosures
+  const dsFav = document.getElementById('ds-favs');
+  const favWrap = document.getElementById('fav-wrap');
+  dsFav.addEventListener('click', ()=>{
+    const open = dsFav.getAttribute('aria-expanded') === 'true';
+    dsFav.setAttribute('aria-expanded', String(!open));
+    favWrap.style.display = open ? 'none' : 'block';
+  });
+  const dsSF = document.getElementById('ds-sideflows');
+  const listSF = document.getElementById('list-sideflows');
+  dsSF.addEventListener('click', ()=>{
+    const open = dsSF.getAttribute('aria-expanded') === 'true';
+    dsSF.setAttribute('aria-expanded', String(!open));
+    listSF.style.display = open ? 'none' : 'grid';
+  });
+
+  scopeTab.addEventListener('click', ()=> setScope('tab'));
+  scopeGlobal.addEventListener('click', ()=> setScope('global'));
+  setScope(getScope());
+
+  useCurrent.addEventListener('click', async ()=>{
+    const t = await getActiveTab();
+    if(t?.url){ urlInput.value = t.url; urlInput.focus(); urlInput.select(); }
+  });
+
+  function apply(){
+    const u = normalize(urlInput.value);
+    if(!u){ toast('Please enter a URL or search.'); urlInput.focus(); return; }
+    openFrom(getScope(), u).catch(e=> toast('Failed: '+(e && e.message || e)));
+  }
+  bOpen.addEventListener('click', apply);
+  urlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') apply(); });
+
+  bSave.addEventListener('click', async ()=>{
+    const u = normalize(urlInput.value);
+    if(!u){ toast('Please enter a URL or search.'); return; }
+    const arr = await loadFavs();
+    if(arr.some(x=>x.url===u)){ toast('Already in favorites'); return; }
+    arr.unshift({ url:u, addedAt:Date.now() });
+    await saveFavs(arr.slice(0,200));
+    renderFavs(arr, fInput.value); toast('Saved to favorites');
+  });
+
+  bCloseGlobal.addEventListener('click', async ()=>{
+    try { const resp = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' });
+      toast(resp?.ok ? ('Global cleared. Disabled on '+(resp.closed||0)+' tabs.') : 'Failed to clear global');
+      renderSideflows();
+    } catch(e){ toast('Error: '+(e && e.message || e)); }
+  });
+
+  fInput.addEventListener('input', async ()=> renderFavs(await loadFavs(), fInput.value));
+
+  renderFavs(await loadFavs());
+  renderSideflows();
+})();
