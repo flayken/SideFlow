@@ -198,18 +198,9 @@
   }
 
   function start(){
-    if(window.innerWidth <= 600){
-      setup();
-    }else{
-      const onResize = () => {
-        if(window.innerWidth <= 600){
-          window.removeEventListener('resize', onResize);
-          setup();
-        }
-      };
-      window.addEventListener('resize', onResize);
-    }
+    setup();
   }
+
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
