@@ -44,8 +44,11 @@ function setScope(val){
 function getScope(){ return localStorage.getItem(KEY_SCOPE) || 'tab'; }
 
 async function openFrom(scope, url){
-  const t = await getActiveTab();
+  if(!chrome.sidePanel?.setOptions || !chrome.sidePanel?.open){
+    throw new Error('Side panel API not supported in this browser');
+  }
   if(scope==='tab'){
+    const t = await getActiveTab();
     await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
     await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
     await chrome.sidePanel.open({ tabId: t.id });
