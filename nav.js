@@ -10,9 +10,6 @@
   const ICON_ON = '#ffffff';
   const ICON_OFF = '#8b93a6';
 
-  // track last observed panel URL for focus mode
-  let LAST_URL = null;
-
   // --- tiny SVG helper (no innerHTML, no '<' in source) ---
   const SVG_NS = 'http://www.w3.org/2000/svg';
   function makeSvg(shapes = []) {
@@ -37,21 +34,11 @@
   }
 
   // icons
-  const icoBack   = () => makeSvg([{ d: 'M15 19l-7-7 7-7' }]);
-  const icoFwd    = () => makeSvg([{ d: 'M9 5l7 7-7 7' }]);
-  const icoRef    = () => makeSvg([
+  const icoBack = () => makeSvg([{ d: 'M15 19l-7-7 7-7' }]);
+  const icoFwd  = () => makeSvg([{ d: 'M9 5l7 7-7 7' }]);
+  const icoRef  = () => makeSvg([
     { d: 'M21 12a9 9 0 1 1-2.64-6.36' },
     { d: 'M21 3v7h-7' }
-  ]);
-  const icoFollow = () => makeSvg([
-    { tag: 'circle', cx: 12, cy: 12, r: 3 },
-    { d: 'M12 2v4' }, { d: 'M12 18v4' }, { d: 'M2 12h4' }, { d: 'M18 12h4' }
-  ]);
-  const icoFocus  = () => makeSvg([
-    { d: 'M4 4h5' }, { d: 'M6 4v3' }, { d: 'M4 6v-2' },           // TL corner
-    { d: 'M20 4v5' }, { d: 'M20 6h-3' },                          // TR corner
-    { d: 'M4 20v-5' }, { d: 'M6 20h3' },                          // BL corner
-    { d: 'M20 20h-5' }, { d: 'M18 20v-3' }                        // BR corner
   ]);
 
   function setup() {
@@ -92,14 +79,12 @@
       return b;
     };
 
-    const backBtn   = makeBtn(icoBack,   'Back',   () => history.back());
-    const fwdBtn    = makeBtn(icoFwd,    'Forward',() => history.forward());
-    const refBtn    = makeBtn(icoRef,    'Refresh',() => location.reload());
-    const followBtn = makeBtn(icoFollow, 'Follow', () => {});
-    const focusBtn  = makeBtn(icoFocus,  'Focus',  onFocusClick);
+    const backBtn = makeBtn(icoBack, 'Back', () => history.back());
+    const fwdBtn  = makeBtn(icoFwd,  'Forward', () => history.forward());
+    const refBtn  = makeBtn(icoRef,  'Refresh', () => location.reload());
 
     // default colors
-    [backBtn, fwdBtn, refBtn, followBtn, focusBtn].forEach(b => {
+    [backBtn, fwdBtn, refBtn].forEach(b => {
       b.style.color = ICON_OFF;
       b.addEventListener('mouseenter', () => { if (!b.disabled) b.style.opacity = '0.9'; });
       b.addEventListener('mouseleave', () => { b.style.opacity = '1'; });
@@ -107,7 +92,7 @@
       b.addEventListener('mouseup',    () => { b.style.opacity = '1'; });
     });
 
-    bar.append(backBtn, fwdBtn, refBtn, followBtn, focusBtn);
+    bar.append(backBtn, fwdBtn, refBtn);
     document.body.style.marginTop = BAR_H + 'px';
     document.body.prepend(bar);
 
@@ -139,12 +124,6 @@
       setEnabled(backBtn, canBack);
       setEnabled(fwdBtn,  canFwd);
       setEnabled(refBtn,  true);
-      setEnabled(focusBtn, true);
-      refreshFollow();
-
-      LAST_URL = location.href;
-      // Optional chaining for safety; ignore if storage/session not available
-      try { chrome.storage?.session?.set({ lastPanelUrl: LAST_URL }); } catch {}
     }
 
     // When we navigate back, we know forward should be available
@@ -152,6 +131,7 @@
       guessedForward = true;
       updateButtons();
     });
+
     // When new entries are pushed, forward is no longer available
     const patchHistory = () => {
       const _push = history.pushState;
@@ -182,65 +162,16 @@
 
     updateButtons();
 
-    // ---- follow logic ----
-    async function refreshFollow(){
-      try{
-        const r = await chrome.runtime.sendMessage({ type:'SP_FOLLOW_INFO' });
-        const f = r.follow || { on:false };
-        const on = !!f.on;
-        followBtn.style.color = on ? ICON_ON : ICON_OFF;
-        followBtn.title = on ? 'Unfollow' : 'Follow';
-        if(on && f.url !== location.href){
-          await chrome.runtime.sendMessage({ type:'SP_FOLLOW_UPDATE_URL', url: location.href });
-        }
-      }catch{}
-    }
-
-    followBtn.addEventListener('click', async ()=>{
-      try{
-        const info = await chrome.runtime.sendMessage({ type:'SP_FOLLOW_INFO' });
-        if(info.follow?.on){
-          if(info.replacing){
-            const ok = confirm('This tab already had a panel. Unfollow will replace it. Continue?');
-            if(!ok) return;
-          }
-          const r = await chrome.runtime.sendMessage({ type:'SP_FOLLOW_STOP' });
-          if(r?.ok){
-            followBtn.style.color = ICON_OFF;
-            followBtn.title = 'Follow';
-          }else if(r?.error){
-            alert(r.error);
-          }
-        }else{
-          const state = await chrome.runtime.sendMessage({ type:'SP_GET_STATE' });
-          if(state.global?.keep){
-            const ok = confirm('Must close global side panel before you can use follow. Close global panels?');
-            if(!ok) return;
-            await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' });
-          }
-          const r = await chrome.runtime.sendMessage({ type:'SP_FOLLOW_START', url: location.href });
-          if(r?.ok){
-            followBtn.style.color = ICON_ON;
-            followBtn.title = 'Unfollow';
-          }else if(r?.error){
-            alert(r.error);
-          }
-        }
-      }catch(e){ console.error(e); }
-    });
-
-    refreshFollow();
-
     // keep bar if removed
-    const mo = new MutationObserver(()=>{
-      if(!document.getElementById('sf-nav-bar')){
+    const mo = new MutationObserver(() => {
+      if (!document.getElementById('sf-nav-bar')) {
         document.body.prepend(bar);
       }
     });
-    mo.observe(document.documentElement, { childList:true, subtree:true });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  function start(){
+  function start() {
     setup();
   }
 
@@ -248,18 +179,5 @@
     document.addEventListener('DOMContentLoaded', start);
   } else {
     start();
-  }
-
-  async function onFocusClick(){
-    try{
-      let url = LAST_URL;
-      if(!url && chrome.storage?.session){
-        ({ lastPanelUrl: url } = await chrome.storage.session.get('lastPanelUrl'));
-      }
-      url = url || location.href;
-      if(!url) return console.warn('Focus: no URL available');
-      const r = await chrome.runtime.sendMessage({ type:'SP_FOCUS_GLOBAL', url });
-      if(!r?.ok) console.warn('Focus failed:', r?.error);
-    }catch(e){ console.warn('Focus error:', e); }
   }
 })();

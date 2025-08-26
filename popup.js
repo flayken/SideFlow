@@ -31,8 +31,11 @@ async function openFrom(scope, url){
   }else{
     await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
     await chrome.sidePanel.setOptions({ path:url, enabled:true });
-    const win = await chrome.windows.getCurrent();
-    await chrome.sidePanel.open({ windowId: win.id });
+    const wins = await chrome.windows.getAll();
+    for(const win of wins){
+      // open the side panel in each window so it's truly global
+      try{ await chrome.sidePanel.open({ windowId: win.id }); }catch{}
+    }
   }
   renderSideflows();
 }
