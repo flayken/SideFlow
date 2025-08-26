@@ -44,7 +44,7 @@ async function listLinkedTabs(windowId){
   const out = [];
   for(const t of tabs){
     if(ids.includes(t.id)){
-      out.push({ id:t.id, windowId:t.windowId, title:t.title, url: map[String(t.id)].url, active: t.active, index: t.index, favIconUrl: t.favIconUrl || null });
+      out.push({ id:t.id, windowId:t.windowId, title:t.title, url: map[String(t.id)].url, tabUrl: t.url, active: t.active, index: t.index });
     }
   }
   return out.sort((a,b)=> a.windowId===b.windowId ? a.index-b.index : a.windowId-b.windowId);
@@ -109,7 +109,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     }
     if(msg?.type==='SP_LIST_LINKED_TABS'){
       const tabs = await listLinkedTabs(msg.windowId);
-      return void sendResponse({ ok:true, tabs: tabs.map(t=>({ id:t.id, windowId:t.windowId, title:t.title, url:t.url, index:t.index, favicon: t.favIconUrl })) });
+      const g = await getGlobal();
+      const out = { ok:true, tabs: tabs.map(t=>({ id:t.id, windowId:t.windowId, title:t.title, url:t.url, index:t.index, favicon: t.favIconUrl })) };
+      if(g && g.url){ out.global = { url: g.url }; }
+      return void sendResponse(out);
     }
     if(msg?.type==='SP_FOLLOW_START'){
       if(!msg.url){ return void sendResponse({ ok:false, error:'Missing url' }); }

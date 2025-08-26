@@ -4,6 +4,7 @@ const THEME_KEY = 'sideflow_theme';
 
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const FALLBACK_ICON = chrome.runtime.getURL('logo.png');
 
 function normalize(s){
   s = (s||'').trim();
@@ -79,7 +80,7 @@ function renderFavs(){
   for(const f of favorites){
     const li=document.createElement('div');
     li.className='fav';
-    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.style.display='none'" /></button>
+    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null; this.src='${FALLBACK_ICON}'" /></button>
       <div class="label" title="${f.label}">${f.label}</div>
       <button class="remove" aria-label="Remove">×</button>`;
     $('.tile',li).addEventListener('click', ()=> openFrom(scope, f.url));
@@ -99,16 +100,40 @@ async function renderSideflows(){
     const win = await chrome.windows.getCurrent();
     const resp = await chrome.runtime.sendMessage({ type:'SP_LIST_LINKED_TABS', windowId: win.id });
     const rows = resp?.tabs || [];
-    if(rows.length===0){
+    const globalUrl = resp?.global?.url;
+    if(rows.length===0 && !globalUrl){
       // Use your logo.png for the empty state icon
       wrap.innerHTML = `<div style="margin:0 auto 8px; width:36px; height:36px; display:grid; place-items:center; border-radius:10px; border:1px solid var(--border); background:var(--surface); overflow:hidden">
-        <img src="logo.png" alt="" width="18" height="18" style="opacity:.9; display:block;" />
-      </div>No per-tab SideFlows in this window yet.`;
+        <img src="${FALLBACK_ICON}" alt="" width="18" height="18" style="opacity:.9; display:block;" />
+      </div>No SideFlows in this window yet.`;
       wrap.style.textAlign='center';
       wrap.style.color='var(--muted)';
-      return;
-    }
-    rows.forEach(r=>{
+        return;
+      }
+
+      if(globalUrl){
+        const item=document.createElement('div');
+        item.style.display='flex';
+        item.style.alignItems='center';
+        item.style.gap='10px';
+        item.style.background='var(--chip)';
+        item.style.border='1px solid var(--border)';
+        item.style.borderRadius='14px';
+        item.style.padding='8px 10px';
+        item.style.marginBottom='8px';
+        const ico=document.createElement('img'); ico.src=favIcon(globalUrl)||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
+        const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
+        const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=labelFrom(globalUrl);
+        const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=globalUrl;
+        meta.append(title,url);
+        const tag=document.createElement('span'); tag.textContent='Global'; tag.className='btn primary gradient'; tag.style.padding='6px 8px'; tag.style.fontSize='12px'; tag.style.cursor='default'; tag.style.pointerEvents='none';
+        const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
+        close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' }); if(res?.ok) renderSideflows(); });
+        item.append(ico,meta,tag,close);
+        wrap.appendChild(item);
+      }
+
+      rows.forEach(r=>{
       const item=document.createElement('div');
       item.style.display='flex';
       item.style.alignItems='center';
@@ -118,7 +143,31 @@ async function renderSideflows(){
       item.style.borderRadius='14px';
       item.style.padding='8px 10px';
       item.style.marginBottom='8px';
-      const ico=document.createElement('img'); ico.src=r.favicon||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
+
+      const icoWrap=document.createElement('div');
+      icoWrap.style.display='flex';
+      icoWrap.style.alignItems='center';
+      icoWrap.style.gap='4px';
+
+      const tabImg=document.createElement('img');
+      tabImg.src=favIcon(r.tabUrl);
+      tabImg.width=20; tabImg.height=20;
+      tabImg.style.borderRadius='6px';
+      tabImg.onerror=()=>{ tabImg.src='logo.png'; };
+
+      const cross=document.createElement('span');
+      cross.textContent='×';
+      cross.style.color='var(--muted)';
+      cross.style.fontSize='12px';
+
+      const sideImg=document.createElement('img');
+      sideImg.src=favIcon(r.url);
+      sideImg.width=20; sideImg.height=20;
+      sideImg.style.borderRadius='6px';
+      sideImg.onerror=()=>{ sideImg.src='logo.png'; };
+
+      icoWrap.append(tabImg,cross,sideImg);
+
       const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
       const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
       const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
@@ -127,7 +176,7 @@ async function renderSideflows(){
       const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
       go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
       close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
-      item.append(ico,meta,go,close);
+      item.append(icoWrap,meta,go,close);
       wrap.appendChild(item);
     });
   }catch(e){
