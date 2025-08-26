@@ -8,7 +8,7 @@
     /* Reset */
     *, *::before, *::after { box-sizing: border-box; }
     html, body { min-height: 100%; }
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; min-width: 785px; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; min-width: 785px; background: var(--bg); }
 
     /* Brand palette */
     :root {
@@ -49,12 +49,12 @@
     .text-gradient { background: linear-gradient(90deg, var(--brand-blue), var(--brand-azure), var(--brand-cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
     /* Layout */
-    .wrap { min-height: 100vh; background: var(--bg); color: var(--text); padding: 24px; position: relative; }
+    .wrap { min-height: 100vh; background: var(--bg); color: var(--text); padding: 24px; position: relative; overflow: hidden; }
     .glow::before, .glow::after {
-      content: ""; position: fixed; inset: 0; pointer-events: none;
+      content: ""; position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(1200px 1200px at 70% -10%, rgba(18,214,200,0.08), transparent 60%),
                   radial-gradient(800px 800px at 10% 10%, rgba(76,111,251,0.08), transparent 60%);
-      mix-blend-mode: normal;
+      mix-blend-mode: normal; z-index: -1;
     }
     [data-theme="light"] .glow::before { background: radial-gradient(1200px 1200px at 70% -10%, rgba(18,214,200,0.06), transparent 60%), radial-gradient(800px 800px at 10% 10%, rgba(76,111,251,0.06), transparent 60%); }
 
