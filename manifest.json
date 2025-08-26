@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SideFlow \u2013 Side Panel Launcher",
+  "name": "SideFlow",
   "version": "1.0.0",
   "description": "Open any site in Chrome\u2019s Side Panel. Choose per\u2011tab or global. Favorites & filter. Close all panels.",
   "permissions": [
