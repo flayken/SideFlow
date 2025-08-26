@@ -12,6 +12,14 @@
     return; // if messaging fails, assume this isn't a panel
   }
 
+  // open a long-lived port to detect when the panel is closed
+  // when the document is destroyed (user closes panel, reloads, etc.)
+  // Chrome will automatically disconnect this port, allowing the
+  // service worker to react accordingly
+  try {
+    chrome.runtime.connect({ name: 'sf-panel' });
+  } catch {}
+
   const BAR_H = 36;
   const BAR_BG = '#0b0e12';
   const BAR_BORDER = '#22283a';

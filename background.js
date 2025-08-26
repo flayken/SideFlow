@@ -266,3 +266,32 @@ chrome.tabs.onRemoved.addListener(async (tabId)=>{
   const f = await getFollow();
   if(f.prev && f.prev[String(tabId)]){ delete f.prev[String(tabId)]; await setFollow(f); }
 });
+
+// listen for ports from side panel pages so we can detect when the
+// user closes the panel using Chrome's built-in close button. The
+// port is kept alive for the lifetime of the panel's document. When
+// the panel is closed (or the document navigates away), the port
+// disconnects and we clean up our internal state.
+chrome.runtime.onConnect.addListener((port)=>{
+  if(port.name !== 'sf-panel') return;
+  port.onDisconnect.addListener(()=>{ handlePanelDisconnect(); });
+});
+
+async function handlePanelDisconnect(){
+  try{
+    const tabId = await activeTabId();
+    if(tabId){
+      const had = await unlinkTab(tabId);
+      if(had){
+        try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}
+        return;
+      }
+    }
+    const g = await getGlobal();
+    if(g.keep){
+      await setGlobal(false, null);
+      LAST_GLOBAL_URL = null;
+      try{ await chrome.sidePanel.setOptions({ enabled:false }); }catch{}
+    }
+  }catch{}
+}
