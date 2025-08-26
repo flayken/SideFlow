@@ -97,6 +97,9 @@
     .btn.ghost:hover { background: var(--chip-hover); }
     .btn.danger { background: linear-gradient(90deg, #f43f5e, #fb7185); color: #fff; }
 
+    .icon-btn { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border-radius:12px; border:1px solid var(--border); background:var(--chip); color:var(--muted); cursor:pointer; padding:0; }
+    .icon-btn:hover { background:var(--chip-hover); color:var(--text); }
+
     /* Segmented */
     .seg { display: inline-flex; gap: 6px; background: var(--chip); border: 1px solid var(--border); padding: 5px; border-radius: 14px; }
     .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 10px; border-radius: 10px; font-size: 12px; cursor: pointer; }
@@ -142,7 +145,7 @@
       .btn { width: 100%; }
     }
     /* Keep Open + Add to Favorites inline next to the URL field on wider popups */
-    @media (min-width: 560px) { .row { grid-template-columns: 1fr auto auto; align-items: center; } }
+    @media (min-width: 560px) { .row { grid-template-columns: 1fr auto auto auto; align-items: center; } }
   </style>
 </head>
 <body>
@@ -196,18 +199,17 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
               Add to Favorites
             </button>
+            <button id="closeAll" class="icon-btn" title="Close All Panels">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
           </section>
 
           <section style="margin-top:14px" class="favs-wrap">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <div class="seg" id="scopeSeg">
                 <button data-value="tab" class="active">This tab only</button>
                 <button data-value="global">Global (all tabs)</button>
               </div>
-              <button id="closeAll" class="btn danger">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                Close all global panels
-              </button>
             </div>
 
             <div id="favorites" class="favs" aria-label="Favorites speed dial"></div>

@@ -234,9 +234,12 @@ async function renderSideflows(){
   });
 
   $('#closeAll').addEventListener('click', async ()=>{
-    try{ const resp = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' });
-      toast(resp?.ok ? 'Closed all global panels' : 'Failed to close');
+    try{
+      const resp = await chrome.runtime.sendMessage({ type:'SP_CLOSE_ALL' });
+      toast(resp?.ok ? 'Closed all panels' : 'Failed to close');
       renderSideflows();
-    }catch{ toast('Failed to close'); }
+    }catch{
+      toast('Failed to close');
+    }
   });
 })();

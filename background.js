@@ -105,6 +105,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
         return void sendResponse({ ok:false, error: e && e.message || String(e) });
       }
     }
+    if(msg?.type==='SP_CLOSE_ALL'){
+      try{
+        await setGlobal(false, null);
+        LAST_GLOBAL_URL = null;
+        await setPerTabMap({});
+        await setFollow({ on:false, url:null, lastTabId:null, prev:{} });
+        try{ await chrome.sidePanel.setOptions({ enabled:false }); }catch{}
+        const tabs = await chrome.tabs.query({});
+        let closed = 0;
+        for(const t of tabs){
+          try{ await chrome.sidePanel.setOptions({ tabId:t.id, enabled:false }); closed++; }catch{}
+        }
+        return void sendResponse({ ok:true, closed });
+      }catch(e){
+        return void sendResponse({ ok:false, error: e && e.message || String(e) });
+      }
+    }
     if(msg?.type==='SP_GET_STATE'){
       const tabId = msg.tabId || (sender?.tab?.id);
       const [per, global] = await Promise.all([ tabId ? getPerTab(tabId) : null, getGlobal() ]);
