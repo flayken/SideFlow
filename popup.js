@@ -4,7 +4,6 @@ const THEME_KEY = 'sideflow_theme';
 
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-const FALLBACK_ICON = chrome.runtime.getURL('logo.png');
 
 function normalize(s){
   s = (s||'').trim();
@@ -32,11 +31,8 @@ async function openFrom(scope, url){
   }else{
     await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
     await chrome.sidePanel.setOptions({ path:url, enabled:true });
-    const wins = await chrome.windows.getAll();
-    for(const win of wins){
-      // open the side panel in each window so it's truly global
-      try{ await chrome.sidePanel.open({ windowId: win.id }); }catch{}
-    }
+    const win = await chrome.windows.getCurrent();
+    await chrome.sidePanel.open({ windowId: win.id });
   }
   renderSideflows();
 }
@@ -80,7 +76,7 @@ function renderFavs(){
   for(const f of favorites){
     const li=document.createElement('div');
     li.className='fav';
-    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null; this.src='${FALLBACK_ICON}'" /></button>
+    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.style.display='none'" /></button>
       <div class="label" title="${f.label}">${f.label}</div>
       <button class="remove" aria-label="Remove">×</button>`;
     $('.tile',li).addEventListener('click', ()=> openFrom(scope, f.url));
@@ -104,7 +100,7 @@ async function renderSideflows(){
     if(rows.length===0 && !globalUrl){
       // Use your logo.png for the empty state icon
       wrap.innerHTML = `<div style="margin:0 auto 8px; width:36px; height:36px; display:grid; place-items:center; border-radius:10px; border:1px solid var(--border); background:var(--surface); overflow:hidden">
-        <img src="${FALLBACK_ICON}" alt="" width="18" height="18" style="opacity:.9; display:block;" />
+        <img src="logo.png" alt="" width="18" height="18" style="opacity:.9; display:block;" />
       </div>No SideFlows in this window yet.`;
       wrap.style.textAlign='center';
       wrap.style.color='var(--muted)';
@@ -143,31 +139,7 @@ async function renderSideflows(){
       item.style.borderRadius='14px';
       item.style.padding='8px 10px';
       item.style.marginBottom='8px';
-
-      const icoWrap=document.createElement('div');
-      icoWrap.style.display='flex';
-      icoWrap.style.alignItems='center';
-      icoWrap.style.gap='4px';
-
-      const tabImg=document.createElement('img');
-      tabImg.src=favIcon(r.tabUrl);
-      tabImg.width=20; tabImg.height=20;
-      tabImg.style.borderRadius='6px';
-      tabImg.onerror=()=>{ tabImg.src='logo.png'; };
-
-      const cross=document.createElement('span');
-      cross.textContent='×';
-      cross.style.color='var(--muted)';
-      cross.style.fontSize='12px';
-
-      const sideImg=document.createElement('img');
-      sideImg.src=favIcon(r.url);
-      sideImg.width=20; sideImg.height=20;
-      sideImg.style.borderRadius='6px';
-      sideImg.onerror=()=>{ sideImg.src='logo.png'; };
-
-      icoWrap.append(tabImg,cross,sideImg);
-
+      const ico=document.createElement('img'); ico.src=r.favicon||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
       const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
       const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
       const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
@@ -176,7 +148,7 @@ async function renderSideflows(){
       const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
       go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
       close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
-      item.append(icoWrap,meta,go,close);
+      item.append(ico,meta,go,close);
       wrap.appendChild(item);
     });
   }catch(e){

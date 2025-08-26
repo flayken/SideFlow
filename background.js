@@ -44,7 +44,7 @@ async function listLinkedTabs(windowId){
   const out = [];
   for(const t of tabs){
     if(ids.includes(t.id)){
-      out.push({ id:t.id, windowId:t.windowId, title:t.title, url: map[String(t.id)].url, tabUrl: t.url, active: t.active, index: t.index });
+      out.push({ id:t.id, windowId:t.windowId, title:t.title, url: map[String(t.id)].url, active: t.active, index: t.index, favIconUrl: t.favIconUrl || null });
     }
   }
   return out.sort((a,b)=> a.windowId===b.windowId ? a.index-b.index : a.windowId-b.windowId);
