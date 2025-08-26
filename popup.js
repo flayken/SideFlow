@@ -16,7 +16,12 @@ function normalize(s){
   return 'https://www.google.com/search?q=' + encodeURIComponent(s);
 }
 function favIcon(u){
-  try{ const h=new URL(u).host; return 'https://www.google.com/s2/favicons?sz=64&domain='+encodeURIComponent(h); }catch{return '';}
+  try {
+    const h = new URL(u).host;
+    return 'https://www.google.com/s2/favicons?sz=64&domain=' + encodeURIComponent(h);
+  } catch {
+    return '';
+  }
 }
 function labelFrom(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return u; } }
 async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
@@ -76,7 +81,7 @@ function renderFavs(){
   for(const f of favorites){
     const li=document.createElement('div');
     li.className='fav';
-    li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.style.display='none'" /></button>
+      li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null;this.src='logo.png';" /></button>
       <div class="label" title="${f.label}">${f.label}</div>
       <button class="remove" aria-label="Remove">×</button>`;
     $('.tile',li).addEventListener('click', ()=> openFrom(scope, f.url));
@@ -117,7 +122,12 @@ async function renderSideflows(){
         item.style.borderRadius='14px';
         item.style.padding='8px 10px';
         item.style.marginBottom='8px';
-        const ico=document.createElement('img'); ico.src=favIcon(globalUrl)||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
+          const ico=document.createElement('img');
+          ico.src = favIcon(globalUrl) || 'logo.png';
+          ico.width = 20;
+          ico.height = 20;
+          ico.style.borderRadius = '6px';
+          ico.onerror = () => { ico.src = 'logo.png'; };
         const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
         const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=labelFrom(globalUrl);
         const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=globalUrl;
@@ -130,27 +140,53 @@ async function renderSideflows(){
       }
 
       rows.forEach(r=>{
-      const item=document.createElement('div');
-      item.style.display='flex';
-      item.style.alignItems='center';
-      item.style.gap='10px';
-      item.style.background='var(--chip)';
-      item.style.border='1px solid var(--border)';
-      item.style.borderRadius='14px';
-      item.style.padding='8px 10px';
-      item.style.marginBottom='8px';
-      const ico=document.createElement('img'); ico.src=r.favicon||''; ico.width=20; ico.height=20; ico.style.borderRadius='6px';
-      const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
-      const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
-      const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
-      meta.append(title,url);
-      const go=document.createElement('button'); go.className='btn ghost'; go.style.padding='6px 8px'; go.style.fontSize='12px'; go.textContent='Go';
-      const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
-      go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
-      close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
-      item.append(ico,meta,go,close);
-      wrap.appendChild(item);
-    });
+        const item=document.createElement('div');
+        item.style.display='flex';
+        item.style.alignItems='center';
+        item.style.gap='10px';
+        item.style.background='var(--chip)';
+        item.style.border='1px solid var(--border)';
+        item.style.borderRadius='14px';
+        item.style.padding='8px 10px';
+        item.style.marginBottom='8px';
+
+        const icoWrap = document.createElement('div');
+        icoWrap.style.display = 'flex';
+        icoWrap.style.alignItems = 'center';
+        icoWrap.style.gap = '4px';
+
+        const tabIco = document.createElement('img');
+        tabIco.src = r.favicon || 'logo.png';
+        tabIco.width = 20;
+        tabIco.height = 20;
+        tabIco.style.borderRadius = '6px';
+        tabIco.onerror = () => { tabIco.src = 'logo.png'; };
+
+        const cross = document.createElement('span');
+        cross.textContent = '×';
+        cross.style.fontSize = '12px';
+        cross.style.color = 'var(--muted)';
+
+        const panelIco = document.createElement('img');
+        panelIco.src = favIcon(r.url) || 'logo.png';
+        panelIco.width = 20;
+        panelIco.height = 20;
+        panelIco.style.borderRadius = '6px';
+        panelIco.onerror = () => { panelIco.src = 'logo.png'; };
+
+        icoWrap.append(tabIco, cross, panelIco);
+
+        const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
+        const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
+        const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
+        meta.append(title,url);
+        const go=document.createElement('button'); go.className='btn ghost'; go.style.padding='6px 8px'; go.style.fontSize='12px'; go.textContent='Go';
+        const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
+        go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
+        close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
+        item.append(icoWrap,meta,go,close);
+        wrap.appendChild(item);
+      });
   }catch(e){
     wrap.textContent='Unable to load tabs.';
   }
