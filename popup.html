@@ -85,8 +85,14 @@
     .field .use-page .icon { display: none; }
 
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; padding: 10px 12px; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: filter .15s ease, background .15s ease, border .15s ease; }
+    .btn:hover { filter: brightness(.85); }
+    .btn:active { filter: brightness(.75); }
     .btn.primary { color: #fff; border-color: transparent; }
-    .btn.primary.gradient { box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
+    .btn.primary.gradient {
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      background-clip: padding-box;
+      border: none;
+    }
     .btn.ghost { background: var(--chip); border-color: var(--border); color: var(--text); }
     .btn.ghost:hover { background: var(--chip-hover); }
     .btn.danger { background: linear-gradient(90deg, #f43f5e, #fb7185); color: #fff; }
@@ -94,7 +100,12 @@
     /* Segmented */
     .seg { display: inline-flex; gap: 6px; background: var(--chip); border: 1px solid var(--border); padding: 5px; border-radius: 14px; }
     .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 10px; border-radius: 10px; font-size: 12px; cursor: pointer; }
-    .seg button.active { background: linear-gradient(90deg, var(--brand-blue), var(--brand-azure), var(--brand-cyan)); color: #fff; box-shadow: 0 6px 16px rgba(5, 150, 200, .2); }
+    .seg button.active {
+      background: linear-gradient(90deg, var(--brand-blue), var(--brand-azure), var(--brand-cyan));
+      color: #fff;
+      box-shadow: 0 6px 16px rgba(5, 150, 200, .2);
+      background-clip: padding-box;
+    }
 
     /* Favorites */
     .favs-wrap { display: flex; flex-direction: column; gap: 8px; }
