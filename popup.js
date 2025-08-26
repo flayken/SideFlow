@@ -27,6 +27,13 @@ function labelFrom(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }ca
 async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
 
 async function openFrom(scope, url){
+  // Only allow regular web pages to be opened. Internal browser pages such as
+  // `chrome://` or `about:` cannot be displayed inside the side panel and would
+  // crash the extension if attempted.
+  if(!/^https?:\/\//i.test(url)){
+    toast('This page cannot be used with SideFlow');
+    return;
+  }
   const t = await getActiveTab();
   try{ await chrome.storage.session.set({ lastPanelUrl: url }); }catch{}
   if(scope==='tab'){
