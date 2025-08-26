@@ -1,8 +1,16 @@
 // Inject navigation controls for SideFlow side panel
-(function () {
+;(async function () {
   if (window.sideFlowNavLoaded) return; // prevent double inject
   window.sideFlowNavLoaded = true;
   if (self !== top) return;             // only top frame
+
+  // only run inside a side panel surface
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'SF_IS_SIDEPANEL' });
+    if (!resp?.inSidePanel) return;
+  } catch {
+    return; // if messaging fails, assume this isn't a panel
+  }
 
   const BAR_H = 36;
   const BAR_BG = '#0b0e12';

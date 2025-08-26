@@ -52,6 +52,9 @@ async function listLinkedTabs(windowId){
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
   (async()=>{
+    if(msg?.type==='SF_IS_SIDEPANEL'){
+      return void sendResponse({ ok:true, inSidePanel: !sender.tab });
+    }
     if(msg?.type==='SP_SET_PER_TAB'){
       if(!msg.tabId || !msg.url) return void sendResponse({ ok:false, error:'Missing tabId/url' });
       await setPerTab(msg.tabId, msg.url);
