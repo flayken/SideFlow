@@ -64,6 +64,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
       if(!msg.url) return void sendResponse({ ok:false, error:'Missing url' });
       await setGlobal(true, msg.url);
       LAST_GLOBAL_URL = msg.url;
+      const tabId = await activeTabId();
+      if(tabId){
+        const had = await unlinkTab(tabId);
+        if(had){
+          try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}
+        }
+      }
       return void sendResponse({ ok:true });
     }
     if(msg?.type==='SP_FOCUS_GLOBAL'){
@@ -74,6 +81,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
         if(!winId) return void sendResponse({ ok:false, error:'No window' });
         await setGlobal(true, url);
         LAST_GLOBAL_URL = url;
+        const tabId = sender?.tab?.id ?? await activeTabId();
+        if(tabId){
+          const had = await unlinkTab(tabId);
+          if(had){
+            try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}
+          }
+        }
         await setFollow({ on:false, url:null, lastTabId:null, prev:{} });
         await chrome.sidePanel.setOptions({ path:url, enabled:true });
         await chrome.sidePanel.open({ windowId: winId });
