@@ -210,7 +210,9 @@ async function renderSideflows(){
 
   $('#usePageBtn').addEventListener('click', async ()=>{
     const t = await getActiveTab();
-    if(t?.url){ $('#urlInput').value = t.url; }
+    if(t?.url){
+      await openFrom(scope, t.url);
+    }
   });
 
   function doOpen(){
