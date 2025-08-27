@@ -60,6 +60,7 @@ async function saveFavs(v){ await chrome.storage.local.set({ [KEY_FAVS]: v }); }
 let favorites = [];
 let scope = 'tab';
 let theme = localStorage.getItem(THEME_KEY) || 'dark';
+const activeDropdownClosers = new Set();
 
 function applyTheme(){
   document.documentElement.setAttribute('data-theme', theme);
@@ -88,6 +89,12 @@ function toast(msg){
 }
 
 function renderFavs(){
+  // Clean up any active close listeners from prior renders
+  for(const fn of activeDropdownClosers){
+    document.removeEventListener('click', fn);
+  }
+  activeDropdownClosers.clear();
+
   const wrap=$('#favorites');
   wrap.innerHTML='';
   const groups={};
@@ -99,7 +106,7 @@ function renderFavs(){
     const li=document.createElement('div');
     li.className='fav';
     
-      const tile=document.createElement('button');
+    const tile=document.createElement('button');
     tile.className='tile';
     tile.innerHTML = `<img src="${favIcon(list[0].url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null;this.src='logo.png';" />`;
     li.appendChild(tile);
@@ -131,6 +138,8 @@ function renderFavs(){
 
       const menu=document.createElement('div');
       menu.className='dropdown';
+      let closeListener;
+
       for(const f of list){
         const item=document.createElement('div');
         item.className='dropdown-item';
@@ -144,14 +153,46 @@ function renderFavs(){
         rm.setAttribute('aria-label','Remove');
         item.append(txt,rm);
         item.addEventListener('click',(e)=>{ if(e.target===rm) return; openFrom(scope,f.url); menu.classList.remove('open'); });
-        rm.addEventListener('click',async(e)=>{ e.stopPropagation(); favorites=favorites.filter(x=>x.id!==f.id); await saveFavs(favorites); renderFavs(); });
+        rm.addEventListener('click',async(e)=>{
+          e.stopPropagation();
+          favorites=favorites.filter(x=>x.id!==f.id);
+          await saveFavs(favorites);
+          if(closeListener){
+            document.removeEventListener('click', closeListener);
+            activeDropdownClosers.delete(closeListener);
+          }
+          renderFavs();
+        });
         menu.appendChild(item);
       }
       li.appendChild(menu);
 
-      tile.addEventListener('click',(e)=>{ e.stopPropagation(); const isOpen=menu.classList.toggle('open'); if(isOpen){ $$('#favorites .dropdown').forEach(d=>{ if(d!==menu) d.classList.remove('open'); }); const close=(ev)=>{ if(!li.contains(ev.target)){ menu.classList.remove('open'); document.removeEventListener('click',close); } }; document.addEventListener('click',close); } });
+      tile.addEventListener('click',(e)=>{
+        e.stopPropagation();
+        const isOpen=menu.classList.toggle('open');
+        if(isOpen){
+          $$('#favorites .dropdown').forEach(d=>{ if(d!==menu) d.classList.remove('open'); });
+          closeListener=(ev)=>{
+            if(!li.contains(ev.target)){
+              menu.classList.remove('open');
+              document.removeEventListener('click',closeListener);
+              activeDropdownClosers.delete(closeListener);
+            }
+          };
+          document.addEventListener('click',closeListener);
+          activeDropdownClosers.add(closeListener);
+        }
+      });
 
-      remove.addEventListener('click', async ()=>{ favorites = favorites.filter(x=> x.label !== domain); await saveFavs(favorites); renderFavs(); });
+      remove.addEventListener('click', async ()=>{
+        favorites = favorites.filter(x=> x.label !== domain);
+        await saveFavs(favorites);
+        if(closeListener){
+          document.removeEventListener('click', closeListener);
+          activeDropdownClosers.delete(closeListener);
+        }
+        renderFavs();
+      });
     }
     wrap.appendChild(li);
   }
@@ -182,84 +223,84 @@ async function renderSideflows(){
       wrap.style.justifyContent='center';
       wrap.style.textAlign='center';
       wrap.style.color='var(--muted)';
-        return;
+      return;
     }
 
-      if(globalUrl){
-        const item=document.createElement('div');
-        item.style.display='flex';
-        item.style.alignItems='center';
-        item.style.gap='10px';
-        item.style.background='var(--chip)';
-        item.style.border='1px solid var(--border)';
-        item.style.borderRadius='14px';
-        item.style.padding='8px 10px';
-        item.style.marginBottom='8px';
-          const ico=document.createElement('img');
-          ico.src = favIcon(globalUrl) || 'logo.png';
-          ico.width = 20;
-          ico.height = 20;
-          ico.style.borderRadius = '6px';
-          ico.onerror = () => { ico.src = 'logo.png'; };
-        const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
-        const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=labelFrom(globalUrl);
-        const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=globalUrl;
-        meta.append(title,url);
-        const tag=document.createElement('span'); tag.textContent='Global'; tag.className='btn primary gradient'; tag.style.padding='6px 8px'; tag.style.fontSize='12px'; tag.style.cursor='default'; tag.style.pointerEvents='none';
-        const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
-        close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' }); if(res?.ok) renderSideflows(); });
-        item.append(ico,meta,tag,close);
-        wrap.appendChild(item);
-      }
+    if(globalUrl){
+      const item=document.createElement('div');
+      item.style.display='flex';
+      item.style.alignItems='center';
+      item.style.gap='10px';
+      item.style.background='var(--chip)';
+      item.style.border='1px solid var(--border)';
+      item.style.borderRadius='14px';
+      item.style.padding='8px 10px';
+      item.style.marginBottom='8px';
+      const ico=document.createElement('img');
+      ico.src = favIcon(globalUrl) || 'logo.png';
+      ico.width = 20;
+      ico.height = 20;
+      ico.style.borderRadius = '6px';
+      ico.onerror = () => { ico.src = 'logo.png'; };
+      const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
+      const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=labelFrom(globalUrl);
+      const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=globalUrl;
+      meta.append(title,url);
+      const tag=document.createElement('span'); tag.textContent='Global'; tag.className='btn primary gradient'; tag.style.padding='6px 8px'; tag.style.fontSize='12px'; tag.style.cursor='default'; tag.style.pointerEvents='none';
+      const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
+      close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLEAR_GLOBAL_AND_CLOSE' }); if(res?.ok) renderSideflows(); });
+      item.append(ico,meta,tag,close);
+      wrap.appendChild(item);
+    }
 
-      rows.forEach(r=>{
-        const item=document.createElement('div');
-        item.style.display='flex';
-        item.style.alignItems='center';
-        item.style.gap='10px';
-        item.style.background='var(--chip)';
-        item.style.border='1px solid var(--border)';
-        item.style.borderRadius='14px';
-        item.style.padding='8px 10px';
-        item.style.marginBottom='8px';
+    rows.forEach(r=>{
+      const item=document.createElement('div');
+      item.style.display='flex';
+      item.style.alignItems='center';
+      item.style.gap='10px';
+      item.style.background='var(--chip)';
+      item.style.border='1px solid var(--border)';
+      item.style.borderRadius='14px';
+      item.style.padding='8px 10px';
+      item.style.marginBottom='8px';
 
-        const icoWrap = document.createElement('div');
-        icoWrap.style.display = 'flex';
-        icoWrap.style.alignItems = 'center';
-        icoWrap.style.gap = '4px';
+      const icoWrap = document.createElement('div');
+      icoWrap.style.display = 'flex';
+      icoWrap.style.alignItems = 'center';
+      icoWrap.style.gap = '4px';
 
-        const tabIco = document.createElement('img');
-        tabIco.src = r.favicon || 'logo.png';
-        tabIco.width = 20;
-        tabIco.height = 20;
-        tabIco.style.borderRadius = '6px';
-        tabIco.onerror = () => { tabIco.src = 'logo.png'; };
+      const tabIco = document.createElement('img');
+      tabIco.src = r.favicon || 'logo.png';
+      tabIco.width = 20;
+      tabIco.height = 20;
+      tabIco.style.borderRadius = '6px';
+      tabIco.onerror = () => { tabIco.src = 'logo.png'; };
 
-        const cross = document.createElement('span');
-        cross.textContent = '×';
-        cross.style.fontSize = '12px';
-        cross.style.color = 'var(--muted)';
+      const cross = document.createElement('span');
+      cross.textContent = '×';
+      cross.style.fontSize = '12px';
+      cross.style.color = 'var(--muted)';
 
-        const panelIco = document.createElement('img');
-        panelIco.src = favIcon(r.url) || 'logo.png';
-        panelIco.width = 20;
-        panelIco.height = 20;
-        panelIco.style.borderRadius = '6px';
-        panelIco.onerror = () => { panelIco.src = 'logo.png'; };
+      const panelIco = document.createElement('img');
+      panelIco.src = favIcon(r.url) || 'logo.png';
+      panelIco.width = 20;
+      panelIco.height = 20;
+      panelIco.style.borderRadius = '6px';
+      panelIco.onerror = () => { panelIco.src = 'logo.png'; };
 
-        icoWrap.append(tabIco, cross, panelIco);
+      icoWrap.append(tabIco, cross, panelIco);
 
-        const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
-        const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
-        const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
-        meta.append(title,url);
-        const go=document.createElement('button'); go.className='btn ghost'; go.style.padding='6px 8px'; go.style.fontSize='12px'; go.textContent='Go';
-        const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
-        go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
-        close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
-        item.append(icoWrap,meta,go,close);
-        wrap.appendChild(item);
-      });
+      const meta=document.createElement('div'); meta.style.flex='1'; meta.style.minWidth='0';
+      const title=document.createElement('div'); title.style.fontSize='13px'; title.style.color='var(--text)'; title.style.whiteSpace='nowrap'; title.style.overflow='hidden'; title.style.textOverflow='ellipsis'; title.textContent=r.title||('(Tab '+r.id+')');
+      const url=document.createElement('div'); url.style.fontSize='11px'; url.style.color='var(--muted)'; url.style.whiteSpace='nowrap'; url.style.overflow='hidden'; url.style.textOverflow='ellipsis'; url.textContent=r.url;
+      meta.append(title,url);
+      const go=document.createElement('button'); go.className='btn ghost'; go.style.padding='6px 8px'; go.style.fontSize='12px'; go.textContent='Go';
+      const close=document.createElement('button'); close.className='btn danger'; close.style.padding='6px 8px'; close.style.fontSize='12px'; close.textContent='Close';
+      go.addEventListener('click', async()=>{ await chrome.runtime.sendMessage({ type:'SP_GOTO_TAB', tabId:r.id, windowId:r.windowId }); });
+      close.addEventListener('click', async()=>{ const res = await chrome.runtime.sendMessage({ type:'SP_CLOSE_TAB_PANEL', tabId:r.id }); if(res?.ok) renderSideflows(); });
+      item.append(icoWrap,meta,go,close);
+      wrap.appendChild(item);
+    });
   }catch(e){
     wrap.textContent='Unable to load tabs.';
   }
@@ -269,7 +310,6 @@ async function renderSideflows(){
   const input = $('#urlInput');
   input.focus();
   input.select();
-  favorites = await loadFavs();
   favorites = await loadFavs();
   renderFavs();
   scope = getScope();
