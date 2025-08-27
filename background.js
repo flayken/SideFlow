@@ -182,9 +182,29 @@ chrome.commands?.onCommand.addListener(async (cmd)=>{
 // port is kept alive for the lifetime of the panel's document. When
 // the panel is closed (or the document navigates away), the port
 // disconnects and we clean up our internal state.
+// Track connections from side panel pages. Navigating within the panel
+// temporarily disconnects the old page before the new one connects, which
+// previously caused us to treat regular navigations as the panel being closed
+// and therefore disable it. Introduce a small delay before cleanup so a new
+// connection can cancel the pending close when a navigation occurs.
+let disconnectTimer = null;
 chrome.runtime.onConnect.addListener((port)=>{
   if(port.name !== 'sf-panel') return;
-  port.onDisconnect.addListener(()=>{ handlePanelDisconnect(); });
+  
+  // A new connection means the panel is still open; cancel any scheduled
+  // disconnect handler.
+  if(disconnectTimer){
+    clearTimeout(disconnectTimer);
+    disconnectTimer = null;
+  }
+
+  port.onDisconnect.addListener(()=>{
+    // Wait briefly to allow a navigation to reconnect before cleaning up.
+    disconnectTimer = setTimeout(()=>{
+      handlePanelDisconnect();
+      disconnectTimer = null;
+    }, 1000);
+  });
 });
 
 async function handlePanelDisconnect(){

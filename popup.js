@@ -36,15 +36,20 @@ async function openFrom(scope, url){
   }
   const t = await getActiveTab();
   try{ await chrome.storage.session.set({ lastPanelUrl: url }); }catch{}
-  if(scope==='tab'){
-    await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
-    await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
-    await chrome.sidePanel.open({ tabId: t.id });
-  }else{
-    await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
-    await chrome.sidePanel.setOptions({ path:url, enabled:true });
-    const win = await chrome.windows.getCurrent();
-    await chrome.sidePanel.open({ windowId: win.id });
+  try{
+    if(scope==='tab'){
+      await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
+      await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
+      await chrome.sidePanel.open({ tabId: t.id });
+    }else{
+      await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
+      await chrome.sidePanel.setOptions({ path:url, enabled:true });
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: win.id });
+    }
+  }catch(e){
+    console.error('Failed to open side panel', e);
+    toast('Unable to open side panel');
   }
   renderSideflows();
 }
