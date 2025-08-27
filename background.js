@@ -199,11 +199,13 @@ chrome.runtime.onConnect.addListener((port)=>{
   }
 
   port.onDisconnect.addListener(()=>{
-    // Wait briefly to allow a navigation to reconnect before cleaning up.
+    // Wait a bit longer for heavy pages (e.g. YouTube) to finish loading and
+    // reconnect before treating the side panel as closed. Some sites take more
+    // than a second to inject our content script and establish the port.
     disconnectTimer = setTimeout(()=>{
       handlePanelDisconnect();
       disconnectTimer = null;
-    }, 1000);
+    }, 4000);
   });
 });
 
