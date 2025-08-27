@@ -158,15 +158,12 @@
     bar.append(backBtn, fwdBtn, refBtn, favBtn);
 
     // shift page content down so the bar doesn't cover site UI
-    const wrap = document.createElement('div');
-    while (document.body.firstChild) {
-      wrap.appendChild(document.body.firstChild);
-    }
-    Object.assign(wrap.style, {
-      transform: `translateY(${BAR_H}px)`,
-      position: 'relative',
-    });
-    document.body.append(bar, wrap);
+    // Instead of restructuring the entire document (which can break
+    // frameworks that expect specific DOM hierarchies), simply prepend the
+    // bar and offset the page using padding. This is far less intrusive and
+    // avoids triggering client-side errors on complex sites.
+    document.body.prepend(bar);
+    document.body.style.paddingTop = BAR_H + 'px';
 
     favorites = await loadFavs();
 
