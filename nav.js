@@ -15,9 +15,10 @@
   // open a long-lived port to detect when the panel is closed
   // when the document is destroyed (user closes panel, reloads, etc.)
   // Chrome will automatically disconnect this port, allowing the
-  // service worker to react accordingly
+  // service worker to react accordingly. Store a reference so the
+  // port stays alive for the lifetime of this document.
   try {
-    chrome.runtime.connect({ name: 'sf-panel' });
+    window.sfPanelPort = chrome.runtime.connect({ name: 'sf-panel' });
   } catch {}
 
   const BAR_H = 36;

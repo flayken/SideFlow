@@ -187,6 +187,7 @@ chrome.commands?.onCommand.addListener(async (cmd)=>{
 // previously caused us to treat regular navigations as the panel being closed
 // and therefore disable it. Introduce a small delay before cleanup so a new
 // connection can cancel the pending close when a navigation occurs.
+const PANEL_RECONNECT_TIMEOUT = 2000; // ms to wait for a reconnect after navigation
 let disconnectTimer = null;
 chrome.runtime.onConnect.addListener((port)=>{
   if(port.name !== 'sf-panel') return;
@@ -205,7 +206,7 @@ chrome.runtime.onConnect.addListener((port)=>{
     disconnectTimer = setTimeout(()=>{
       handlePanelDisconnect();
       disconnectTimer = null;
-    }, 4000);
+    }, PANEL_RECONNECT_TIMEOUT);
   });
 });
 
