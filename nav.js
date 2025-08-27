@@ -156,8 +156,17 @@
     });
 
     bar.append(backBtn, fwdBtn, refBtn, favBtn);
-    document.body.style.marginTop = BAR_H + 'px';
-    document.body.prepend(bar);
+
+    // shift page content down so the bar doesn't cover site UI
+    const wrap = document.createElement('div');
+    while (document.body.firstChild) {
+      wrap.appendChild(document.body.firstChild);
+    }
+    Object.assign(wrap.style, {
+      transform: `translateY(${BAR_H}px)`,
+      position: 'relative',
+    });
+    document.body.append(bar, wrap);
 
     favorites = await loadFavs();
 
