@@ -90,18 +90,69 @@ function toast(msg){
 function renderFavs(){
   const wrap=$('#favorites');
   wrap.innerHTML='';
+  const groups={};
   for(const f of favorites){
+    const domain = f.label || labelFrom(f.url);
+    (groups[domain] ||= []).push(f);
+  }
+  for(const [domain,list] of Object.entries(groups)){
     const li=document.createElement('div');
     li.className='fav';
-      li.innerHTML=`<button class="tile" title="${f.url}"><img src="${favIcon(f.url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null;this.src='logo.png';" /></button>
-      <div class="label" title="${f.label}">${f.label}</div>
-      <button class="remove" aria-label="Remove">×</button>`;
-    $('.tile',li).addEventListener('click', ()=> openFrom(scope, f.url));
-    $('.remove',li).addEventListener('click', async ()=>{
-      favorites = favorites.filter(x=>x.id!==f.id);
-      await saveFavs(favorites);
-      renderFavs();
-    });
+    
+      const tile=document.createElement('button');
+    tile.className='tile';
+    tile.innerHTML = `<img src="${favIcon(list[0].url)}" alt="" width="22" height="22" style="border-radius:6px" onerror="this.onerror=null;this.src='logo.png';" />`;
+    li.appendChild(tile);
+
+    const label=document.createElement('div');
+    label.className='label';
+    label.title=domain;
+    label.textContent=domain;
+    li.appendChild(label);
+
+    const remove=document.createElement('button');
+    remove.className='remove';
+    remove.setAttribute('aria-label','Remove');
+    remove.textContent='×';
+    li.appendChild(remove);
+
+    if(list.length===1){
+      tile.addEventListener('click', ()=> openFrom(scope, list[0].url));
+      remove.addEventListener('click', async ()=>{
+        favorites = favorites.filter(x=>x.id!==list[0].id);
+        await saveFavs(favorites);
+        renderFavs();
+      });
+    } else {
+      const count=document.createElement('span');
+      count.className='count';
+      count.textContent=list.length;
+      tile.appendChild(count);
+
+      const menu=document.createElement('div');
+      menu.className='dropdown';
+      for(const f of list){
+        const item=document.createElement('div');
+        item.className='dropdown-item';
+        const txt=document.createElement('span');
+        txt.className='label';
+        try{ txt.textContent=f.title || new URL(f.url).pathname.replace(/^\//,'') || '/'; }
+        catch{ txt.textContent=f.title || f.url; }
+        const rm=document.createElement('button');
+        rm.className='drop-remove';
+        rm.textContent='×';
+        rm.setAttribute('aria-label','Remove');
+        item.append(txt,rm);
+        item.addEventListener('click',(e)=>{ if(e.target===rm) return; openFrom(scope,f.url); menu.classList.remove('open'); });
+        rm.addEventListener('click',async(e)=>{ e.stopPropagation(); favorites=favorites.filter(x=>x.id!==f.id); await saveFavs(favorites); renderFavs(); });
+        menu.appendChild(item);
+      }
+      li.appendChild(menu);
+
+      tile.addEventListener('click',(e)=>{ e.stopPropagation(); const isOpen=menu.classList.toggle('open'); if(isOpen){ $$('#favorites .dropdown').forEach(d=>{ if(d!==menu) d.classList.remove('open'); }); const close=(ev)=>{ if(!li.contains(ev.target)){ menu.classList.remove('open'); document.removeEventListener('click',close); } }; document.addEventListener('click',close); } });
+
+      remove.addEventListener('click', async ()=>{ favorites = favorites.filter(x=> x.label !== domain); await saveFavs(favorites); renderFavs(); });
+    }
     wrap.appendChild(li);
   }
 }

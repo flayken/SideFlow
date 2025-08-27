@@ -66,7 +66,7 @@
     const u = normalize(location.href);
     const isFav = favorites.some(f => f.url === u);
     if (isFav) return;
-    favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
+    favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u), title: document.title });
     await saveFavs(favorites);
     updateFavIcon();
   }
