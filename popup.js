@@ -210,6 +210,10 @@ async function renderSideflows(){
 }
 
 (async function init(){
+  const input = $('#urlInput');
+  input.focus();
+  input.select();
+  favorites = await loadFavs();
   favorites = await loadFavs();
   renderFavs();
   scope = getScope();

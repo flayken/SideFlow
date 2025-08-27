@@ -169,6 +169,14 @@ chrome.tabs.onRemoved.addListener(async (tabId)=>{
   await unlinkTab(tabId);
 });
 
+chrome.commands?.onCommand.addListener(async (cmd)=>{
+  if(cmd === 'open-popup'){
+    try{
+      await chrome.action.openPopup();
+    }catch{}
+  }
+});
+
 // listen for ports from side panel pages so we can detect when the
 // user closes the panel using Chrome's built-in close button. The
 // port is kept alive for the lifetime of the panel's document. When

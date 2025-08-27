@@ -30,5 +30,13 @@
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
+  },
+  "commands": {
+    "open-popup": {
+      "suggested_key": {
+        "default": "Ctrl+Space"
+      },
+      "description": "Open SideFlow popup"
+    }
   }
 }
