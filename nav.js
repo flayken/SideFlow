@@ -29,20 +29,14 @@
   const KEY_FAVS = 'sideflow.favorites';
 
   function normalize(u) {
-    try { return new URL(u).origin; } catch { return u; }
+    try { return new URL(u).toString(); } catch { return u; }
   }
   function labelFrom(u) {
     try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; }
   }
   async function loadFavs() {
     const r = await chrome.storage.local.get(KEY_FAVS);
-    let list = r[KEY_FAVS] || [];
-    const seen = new Set();
-    list = list
-      .map(f => ({ ...f, url: normalize(f.url) }))
-      .filter(f => !seen.has(f.url) && seen.add(f.url));
-    await saveFavs(list);
-    return list;
+    return r[KEY_FAVS] || [];
   }
   async function saveFavs(v) {
     await chrome.storage.local.set({ [KEY_FAVS]: v });
@@ -51,35 +45,6 @@
   let favorites = [];
   let favBtn;
 
-  // --- tiny SVG helper (no innerHTML, no '<' in source) ---
-  const SVG_NS = 'http://www.w3.org/2000/svg';
-  function makeSvg(shapes = []) {
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('width', '18');
-    svg.setAttribute('height', '18');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2.2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    for (const s of shapes) {
-      const el = document.createElementNS(SVG_NS, s.tag || 'path');
-      for (const [k, v] of Object.entries(s)) {
-        if (k === 'tag') continue;
-        el.setAttribute(k, String(v));
-      }
-      svg.appendChild(el);
-    }
-    return svg;
-  }
-
-  const icoBack   = () => makeSvg([{ d: 'M15 19l-7-7 7-7' }]);
-  const icoFwd    = () => makeSvg([{ d: 'M9 5l7 7-7 7' }]);
-  const icoRef    = () => makeSvg([
-    { d: 'M21 12a9 9 0 1 1-2.64-6.36' },
-    { d: 'M21 3v7h-7' }
-  ]);
   const icoFav = (filled) =>
     filled
       ? makeSvg([{ d: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z', fill: 'currentColor', stroke: 'none' }])
@@ -106,6 +71,37 @@
     await saveFavs(favorites);
     updateFavIcon();
   }
+
+  // --- tiny SVG helper (no innerHTML, no '<' in source) ---
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function makeSvg(shapes = []) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2.2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    for (const s of shapes) {
+      const el = document.createElementNS(SVG_NS, s.tag || 'path');
+      for (const [k, v] of Object.entries(s)) {
+        if (k === 'tag') continue;
+        el.setAttribute(k, String(v));
+      }
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  // icons
+  const icoBack   = () => makeSvg([{ d: 'M15 19l-7-7 7-7' }]);
+  const icoFwd    = () => makeSvg([{ d: 'M9 5l7 7-7 7' }]);
+  const icoRef    = () => makeSvg([
+    { d: 'M21 12a9 9 0 1 1-2.64-6.36' },
+    { d: 'M21 3v7h-7' }
+  ]);
 
   async function setup() {
     // bar
@@ -145,10 +141,10 @@
       return b;
     };
 
-    const backBtn = makeBtn(icoBack, 'Back', () => history.back());
-    const fwdBtn  = makeBtn(icoFwd,  'Forward', () => history.forward());
-    const refBtn  = makeBtn(icoRef,  'Refresh', () => location.reload());
-    favBtn        = makeBtn(() => icoFav(false), 'Add to Favorites', toggleFavorite);
+    const backBtn   = makeBtn(icoBack,   'Back',    () => history.back());
+    const fwdBtn    = makeBtn(icoFwd,    'Forward', () => history.forward());
+    const refBtn    = makeBtn(icoRef,    'Refresh', () => location.reload());
+    favBtn          = makeBtn(() => icoFav(false), 'Add to Favorites', toggleFavorite);
     favBtn.style.marginLeft = 'auto';
 
     // default colors
@@ -230,17 +226,14 @@
     if (hasNavAPI) {
       const navUpdate = () => updateButtons();
       navigation.addEventListener?.('currententrychange', navUpdate);
-      navigation.addEventListener?.('navigatesuccess',    navUpdate);
+      navigation.addEventListener?.('navigatesuccess', navUpdate);
     }
 
     updateButtons();
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[KEY_FAVS]) {
-        const seen = new Set();
-        favorites = (changes[KEY_FAVS].newValue || [])
-          .map(f => ({ ...f, url: normalize(f.url) }))
-          .filter(f => !seen.has(f.url) && seen.add(f.url));
+        favorites = changes[KEY_FAVS].newValue || [];
         updateFavIcon();
       }
     });

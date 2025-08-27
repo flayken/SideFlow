@@ -24,7 +24,6 @@ function favIcon(u){
   }
 }
 function labelFrom(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return u; } }
-function baseUrl(u){ try{ return new URL(u).origin; }catch{ return u; } }
 async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
 
 async function openFrom(scope, url){
@@ -50,15 +49,7 @@ async function openFrom(scope, url){
   renderSideflows();
 }
 
-async function loadFavs(){
-  const r = await chrome.storage.local.get(KEY_FAVS);
-  let list = r[KEY_FAVS] || [];
-  const seen = new Set();
-  list = list.map(f => ({ ...f, url: baseUrl(f.url) }))
-             .filter(f => !seen.has(f.url) && seen.add(f.url));
-  await saveFavs(list);
-  return list;
-}
+async function loadFavs(){ const r = await chrome.storage.local.get(KEY_FAVS); return r[KEY_FAVS] || []; }
 async function saveFavs(v){ await chrome.storage.local.set({ [KEY_FAVS]: v }); }
 
 let favorites = [];
@@ -228,14 +219,11 @@ async function renderSideflows(){
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[KEY_FAVS]) {
-      const seen = new Set();
-      favorites = (changes[KEY_FAVS].newValue || [])
-        .map(f => ({ ...f, url: baseUrl(f.url) }))
-        .filter(f => !seen.has(f.url) && seen.add(f.url));
+      favorites = changes[KEY_FAVS].newValue || [];
       renderFavs();
     }
   });
-
+  
   $('#themeToggle').addEventListener('click', ()=>{
     theme = theme==='dark' ? 'light' : 'dark';
     localStorage.setItem(THEME_KEY, theme);
@@ -260,9 +248,8 @@ async function renderSideflows(){
   $('#urlInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doOpen(); });
 
   $('#favBtn').addEventListener('click', async ()=>{
-    const full = normalize($('#urlInput').value);
-    if(!full) return;
-    const u = baseUrl(full);
+    const u = normalize($('#urlInput').value);
+    if(!u) return;
     if(favorites.some(f=>f.url===u)) return;
     favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
     await saveFavs(favorites);
