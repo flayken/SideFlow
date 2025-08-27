@@ -104,6 +104,12 @@ function renderFavs(){
 async function renderSideflows(){
   const wrap = $('#sideflows');
   wrap.innerHTML='';
+  wrap.style.display='block';
+  wrap.style.textAlign='left';
+  wrap.style.color='';
+  wrap.style.alignItems='';
+  wrap.style.justifyContent='';
+  wrap.style.flexDirection='';
   try{
     const win = await chrome.windows.getCurrent();
     const resp = await chrome.runtime.sendMessage({ type:'SP_LIST_LINKED_TABS', windowId: win.id });
@@ -114,10 +120,14 @@ async function renderSideflows(){
       wrap.innerHTML = `<div style="margin:0 auto 8px; width:36px; height:36px; display:grid; place-items:center; border-radius:10px; border:1px solid var(--border); background:var(--surface); overflow:hidden">
         <img src="logo.png" alt="" width="18" height="18" style="opacity:.9; display:block;" />
       </div>No SideFlows in this window yet.`;
+      wrap.style.display='flex';
+      wrap.style.flexDirection='column';
+      wrap.style.alignItems='center';
+      wrap.style.justifyContent='center';
       wrap.style.textAlign='center';
       wrap.style.color='var(--muted)';
         return;
-      }
+    }
 
       if(globalUrl){
         const item=document.createElement('div');
