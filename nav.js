@@ -57,17 +57,16 @@
     favBtn.innerHTML = '';
     favBtn.appendChild(icoFav(isFav));
     favBtn.style.color = isFav ? ICON_ON : ICON_OFF;
-    favBtn.title = isFav ? 'Remove Favorite' : 'Add to Favorites';
+    favBtn.title = isFav ? 'Already in Favorites' : 'Add to Favorites';
+    favBtn.disabled = isFav;
+    favBtn.style.cursor = isFav ? 'default' : 'pointer';
   }
 
   async function toggleFavorite() {
     const u = normalize(location.href);
     const isFav = favorites.some(f => f.url === u);
-    if (isFav) {
-      favorites = favorites.filter(f => f.url !== u);
-    } else {
-      favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
-    }
+    if (isFav) return;
+    favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
     await saveFavs(favorites);
     updateFavIcon();
   }
