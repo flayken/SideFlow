@@ -48,13 +48,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     if(msg?.type==='SP_SET_GLOBAL'){
       if(!msg.url) return void sendResponse({ ok:false, error:'Missing url' });
       await setGlobal(true, msg.url);
-      LAST_GLOBAL_URL = msg.url;
-      const tabId = await activeTabId();
+      // reset cache so applyForActive sets global panel immediately
+      LAST_GLOBAL_URL = null;
+      const tabId = sender?.tab?.id ?? await activeTabId();
       if(tabId){
         const had = await unlinkTab(tabId);
         if(had){
           try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}
         }
+        try{
+          const tab = await chrome.tabs.get(tabId);
+          await applyForActive(tabId, tab.windowId);
+        }catch{}
       }
       return void sendResponse({ ok:true });
     }
