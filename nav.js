@@ -13,21 +13,20 @@
   }
 
   // open a long-lived port to detect when the panel is closed
-  // when the document is destroyed (user closes panel, reloads, etc.)
-  // Chrome will automatically disconnect this port, allowing the
-  // service worker to react accordingly. Store a reference so the
-  // port stays alive for the lifetime of this document.
+  // keep a reference so it stays alive
   try {
     window.sfPanelPort = chrome.runtime.connect({ name: 'sf-panel' });
   } catch {}
 
   const BAR_H = 36;
+  const HOTZONE_H = 4; // hover area at top edge to reveal the bar
   const BAR_BG = '#0b0e12';
   const BAR_BORDER = '#22283a';
   const ICON_ON = '#ffffff';
   const ICON_OFF = '#8b93a6';
 
   const KEY_FAVS = 'sideflow.favorites';
+  const KEY_HINT = 'sideflow.seenAutohideHint';
 
   function normalize(u) {
     try { return new URL(u).toString(); } catch { return u; }
@@ -61,6 +60,8 @@
     favBtn.title = isFav ? 'Already in Favorites' : 'Add to Favorites';
     favBtn.disabled = isFav;
     favBtn.style.cursor = isFav ? 'default' : 'pointer';
+    // If disabled, let clicks pass through to page underneath
+    favBtn.style.pointerEvents = isFav ? 'none' : 'auto';
   }
 
   async function toggleFavorite() {
@@ -102,9 +103,34 @@
     { d: 'M21 12a9 9 0 1 1-2.64-6.36' },
     { d: 'M21 3v7h-7' }
   ]);
+  const icoChevronDown = () => makeSvg([{ d: 'M6 9l6 6 6-6' }]);
 
   async function setup() {
-    // bar
+    // --- hint strip (always visible; suggests something is at top) ---
+    const hintStrip = document.createElement('div');
+    Object.assign(hintStrip.style, {
+      position: 'fixed',
+      top: '0', left: '0', right: '0',
+      height: '2px',
+      zIndex: '2147483647',
+      background: 'linear-gradient(90deg, rgba(76,111,251,.35), rgba(47,181,241,.35), rgba(18,214,200,.35))',
+      opacity: '.6',
+      transition: 'opacity .15s ease',
+      pointerEvents: 'none', // purely visual
+    });
+
+    // --- hotzone (reveals the bar on hover) ---
+    const hotzone = document.createElement('div');
+    Object.assign(hotzone.style, {
+      position: 'fixed',
+      top: '0', left: '0', right: '0',
+      height: HOTZONE_H + 'px',
+      zIndex: '2147483647',
+      pointerEvents: 'auto',
+      background: 'transparent',
+    });
+
+    // --- full-width, overlay bar (auto-hidden) ---
     const bar = document.createElement('div');
     bar.id = 'sf-nav-bar';
     Object.assign(bar.style, {
@@ -112,7 +138,6 @@
       top: '0', left: '0', right: '0',
       height: BAR_H + 'px',
       display: 'flex',
-      gap: '8px',
       alignItems: 'center',
       padding: '4px 8px',
       background: BAR_BG,
@@ -120,6 +145,23 @@
       zIndex: '2147483647',
       color: '#e9eaf1',
       fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+      userSelect: 'none',
+      // hidden by default
+      transform: `translateY(${-BAR_H}px)`,
+      opacity: '0',
+      transition: 'transform .16s ease, opacity .16s ease',
+      // the bar surface itself is click-through
+      pointerEvents: 'none',
+    });
+
+    // clickable controls container
+    const controls = document.createElement('div');
+    Object.assign(controls.style, {
+      display: 'flex',
+      gap: '8px',
+      alignItems: 'center',
+      width: '100%',
+      pointerEvents: 'auto', // only this section captures clicks
     });
 
     // minimal icon button
@@ -136,37 +178,107 @@
         display: 'grid',
         placeItems: 'center',
         borderRadius: '6px',
+        color: ICON_OFF,
+        pointerEvents: 'auto',
       });
-      b.addEventListener('click', action);
-      return b;
-    };
-
-    const backBtn   = makeBtn(icoBack,   'Back',    () => history.back());
-    const fwdBtn    = makeBtn(icoFwd,    'Forward', () => history.forward());
-    const refBtn    = makeBtn(icoRef,    'Refresh', () => location.reload());
-    favBtn          = makeBtn(() => icoFav(false), 'Add to Favorites', toggleFavorite);
-    favBtn.style.marginLeft = 'auto';
-
-    // default colors
-    [backBtn, fwdBtn, refBtn, favBtn].forEach(b => {
-      b.style.color = ICON_OFF;
+      b.addEventListener('click', (e) => { e.stopPropagation(); action(); });
       b.addEventListener('mouseenter', () => { if (!b.disabled) b.style.opacity = '0.9'; });
       b.addEventListener('mouseleave', () => { b.style.opacity = '1'; });
       b.addEventListener('mousedown',  () => { if (!b.disabled) b.style.opacity = '0.8'; });
       b.addEventListener('mouseup',    () => { b.style.opacity = '1'; });
+      return b;
+    };
+
+    const backBtn = makeBtn(icoBack, 'Back', () => history.back());
+    const fwdBtn  = makeBtn(icoFwd,  'Forward', () => history.forward());
+    const refBtn  = makeBtn(icoRef,  'Refresh', () => location.reload());
+    favBtn        = makeBtn(() => icoFav(false), 'Add to Favorites', toggleFavorite);
+    // push favorites icon to the far right
+    favBtn.style.marginLeft = 'auto';
+
+    controls.append(backBtn, fwdBtn, refBtn, favBtn);
+    bar.appendChild(controls);
+
+    // --- small always-visible handle (top-left) ---
+    const handle = document.createElement('button');
+    handle.id = 'sf-handle';
+    handle.setAttribute('aria-label', 'Show Navigation (Alt+S)');
+    Object.assign(handle.style, {
+      position: 'fixed',
+      top: '6px',
+      left: '8px',
+      height: '24px',
+      padding: '0 10px',
+      borderRadius: '9999px',
+      background: 'rgba(11,14,18,.85)',
+      border: '1px solid ' + BAR_BORDER,
+      color: '#e9eaf1',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      fontSize: '12px',
+      lineHeight: '1',
+      zIndex: '2147483647',
+      pointerEvents: 'auto',
+      boxShadow: '0 4px 12px rgba(0,0,0,.25)',
+      userSelect: 'none',
+      opacity: '.85',
+      backdropFilter: 'blur(2px)',
     });
+    const chev = icoChevronDown();
+    chev.setAttribute('width','14'); chev.setAttribute('height','14');
+    handle.appendChild(chev);
+    const hLabel = document.createElement('span');
+    hLabel.textContent = 'Navigation';
+    handle.appendChild(hLabel);
+    handle.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
+    handle.addEventListener('mouseleave', () => { handle.style.opacity = '.85'; });
+    handle.addEventListener('click', (e) => { e.stopPropagation(); showBar(); scheduleHide(2500); });
 
-    bar.append(backBtn, fwdBtn, refBtn, favBtn);
-
-    // shift page content down so the bar doesn't cover site UI
-    // Instead of restructuring the entire document (which can break
-    // frameworks that expect specific DOM hierarchies), simply prepend the
-    // bar and offset the page using padding. This is far less intrusive and
-    // avoids triggering client-side errors on complex sites.
-    document.body.prepend(bar);
-    document.body.style.paddingTop = BAR_H + 'px';
+    // Insert visual hint + hotzone + bar + handle (do NOT push the page down)
+    document.body.prepend(hintStrip, hotzone, bar, handle);
 
     favorites = await loadFavs();
+
+    // ---- autohide logic ----
+    let hideTimer = null;
+    const setHandleActive = (active) => {
+      handle.style.transition = 'opacity .12s ease';
+      handle.style.opacity = active ? '0' : '.85';
+      handle.style.pointerEvents = active ? 'none' : 'auto';
+    };
+    const showBar = () => {
+      clearTimeout(hideTimer);
+      bar.style.transform = 'translateY(0)';
+      bar.style.opacity = '1';
+      setHandleActive(true);
+      hintStrip.style.opacity = '0'; // hide strip while bar is visible
+    };
+    const scheduleHide = (delay = 900) => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        bar.style.transform = `translateY(${-BAR_H}px)`;
+        bar.style.opacity = '0';
+        setHandleActive(false);
+        hintStrip.style.opacity = '.6'; // bring strip back
+      }, delay);
+    };
+
+    // reveal on hover at very top
+    hotzone.addEventListener('mouseenter', () => { hintStrip.style.opacity = '1'; showBar(); });
+    // keep visible while hovering the bar
+    bar.addEventListener('mouseenter', showBar);
+    // hide after leaving the bar
+    bar.addEventListener('mouseleave', () => scheduleHide());
+
+    // keyboard toggle: Alt+S (matches your manifest)
+    window.addEventListener('keydown', (e) => {
+      if ((e.altKey || e.metaKey) && !e.ctrlKey && !e.shiftKey && e.code === 'KeyS') {
+        const hidden = bar.style.opacity === '0';
+        hidden ? showBar() : scheduleHide(0);
+      }
+      if (e.key === 'Escape') scheduleHide(0);
+    }, { capture: true });
 
     // ---- enable/disable logic ----
     let guessedForward = false;
@@ -176,6 +288,8 @@
       el.style.color = on ? ICON_ON : ICON_OFF;
       el.style.cursor = on ? 'pointer' : 'default';
       el.style.opacity = '1';
+      // Disabled buttons are fully click-through to the page
+      el.style.pointerEvents = on ? 'auto' : 'none';
     };
 
     const hasNavAPI = 'navigation' in window &&
@@ -224,15 +338,13 @@
     patchHistory();
 
     // Listen for SPA and BFCache navigations
-    window.addEventListener('popstate', () => {
-      updateButtons();
-    });
+    window.addEventListener('popstate', () => { updateButtons(); });
     window.addEventListener('pageshow', updateButtons);
 
     if (hasNavAPI) {
       const navUpdate = () => updateButtons();
       navigation.addEventListener?.('currententrychange', navUpdate);
-      navigation.addEventListener?.('navigatesuccess', navUpdate);
+      navigation.addEventListener?.('navigatesuccess',   navUpdate);
     }
 
     updateButtons();
@@ -244,13 +356,57 @@
       }
     });
 
-    // keep bar if removed
+    // keep UI if removed
     const mo = new MutationObserver(() => {
-      if (!document.getElementById('sf-nav-bar')) {
-        document.body.prepend(bar);
+      const missingBar = !document.getElementById('sf-nav-bar');
+      const missingHot = !document.body.contains(hotzone);
+      const missingHint = !document.body.contains(hintStrip);
+      const missingHandle = !document.getElementById('sf-handle');
+      if (missingHint || missingHot || missingBar || missingHandle) {
+        document.body.prepend(hintStrip, hotzone, bar, handle);
       }
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
+
+    // One-time coachmark to teach the affordance
+    maybeShowCoachmark();
+
+    // Briefly show so users discover it
+    showBar();
+    scheduleHide(1400);
+  }
+
+  async function maybeShowCoachmark() {
+    try {
+      const seen = (await chrome.storage.local.get(KEY_HINT))[KEY_HINT];
+      if (seen) return;
+      const tip = document.createElement('div');
+      tip.textContent = 'Hover the top edge or press Alt+S to show Navigation controls';
+      Object.assign(tip.style, {
+        position: 'fixed',
+        left: '50%',
+        bottom: '14px',
+        transform: 'translateX(-50%)',
+        background: 'rgba(11,14,18,.92)',
+        color: '#e9eaf1',
+        border: '1px solid #22283a',
+        borderRadius: '10px',
+        padding: '8px 12px',
+        fontSize: '12px',
+        zIndex: '2147483647',
+        boxShadow: '0 8px 24px rgba(0,0,0,.35)',
+        pointerEvents: 'none',
+        opacity: '0',
+        transition: 'opacity .2s ease',
+      });
+      document.body.appendChild(tip);
+      requestAnimationFrame(() => { tip.style.opacity = '1'; });
+      setTimeout(() => {
+        tip.style.opacity = '0';
+        setTimeout(() => tip.remove(), 200);
+      }, 3200);
+      await chrome.storage.local.set({ [KEY_HINT]: true });
+    } catch {}
   }
 
   async function start() {
