@@ -247,16 +247,6 @@ async function renderSideflows(){
   $('#openBtn').addEventListener('click', doOpen);
   $('#urlInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doOpen(); });
 
-  $('#favBtn').addEventListener('click', async ()=>{
-    const u = normalize($('#urlInput').value);
-    if(!u) return;
-    if(favorites.some(f=>f.url===u)) return;
-    favorites.unshift({ id: Date.now(), url: u, label: labelFrom(u) });
-    await saveFavs(favorites);
-    renderFavs();
-    toast('Added to Favorites');
-  });
-
   $('#closeAll').addEventListener('click', async ()=>{
     try{
       const resp = await chrome.runtime.sendMessage({ type:'SP_CLOSE_ALL' });
