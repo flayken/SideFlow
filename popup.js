@@ -21,15 +21,22 @@ function favIcon(u){
 function labelFrom(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return u; } }
 async function getActiveTab(){ const [t] = await chrome.tabs.query({active:true,currentWindow:true}); return t; }
 
+function panelPath(url){
+  return 'panel.html?url=' + encodeURIComponent(url);
+}
+
 async function openFrom(scope, url){
   const t = await getActiveTab();
+  if(!t?.id) throw new Error('No active tab is available');
   if(scope==='tab'){
-    await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
-    await chrome.sidePanel.setOptions({ tabId: t.id, path:url, enabled:true });
+    const result = await chrome.runtime.sendMessage({ type:'SP_SET_PER_TAB', tabId:t.id, url });
+    if(!result?.ok) throw new Error(result?.error || 'Could not save this SideFlow');
+    await chrome.sidePanel.setOptions({ tabId: t.id, path:panelPath(url), enabled:true });
     await chrome.sidePanel.open({ tabId: t.id });
   }else{
-    await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
-    await chrome.sidePanel.setOptions({ path:url, enabled:true });
+    const result = await chrome.runtime.sendMessage({ type:'SP_SET_GLOBAL', url });
+    if(!result?.ok) throw new Error(result?.error || 'Could not save the global SideFlow');
+    await chrome.sidePanel.setOptions({ path:panelPath(url), enabled:true });
     const win = await chrome.windows.getCurrent();
     await chrome.sidePanel.open({ windowId: win.id });
   }
@@ -152,10 +159,15 @@ async function renderSideflows(){
     if(t?.url){ $('#urlInput').value = t.url; }
   });
 
-  function doOpen(){
+  async function doOpen(){
     const u = normalize($('#urlInput').value);
     if(!u) return;
-    openFrom(scope, u);
+    try{
+      await openFrom(scope, u);
+    }catch(error){
+      console.error('Unable to open SideFlow', error);
+      toast(error?.message || 'Unable to open SideFlow');
+    }
   }
   $('#openBtn').addEventListener('click', doOpen);
   $('#urlInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doOpen(); });
