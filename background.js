@@ -2,6 +2,8 @@
 const GLOBAL_KEYS = { keep:'sf:globalKeep', url:'sf:globalUrl' };
 const PT_KEY = 'sf:perTabMap';
 
+function panelPath(url){ return 'panel.html?url=' + encodeURIComponent(url); }
+
 async function getGlobal(){ const r = await chrome.storage.local.get([GLOBAL_KEYS.keep, GLOBAL_KEYS.url]); return { keep: !!r[GLOBAL_KEYS.keep], url: r[GLOBAL_KEYS.url] || null }; }
 async function setGlobal(keep, url){ const obj={}; if(typeof keep==='boolean') obj[GLOBAL_KEYS.keep]=keep; if(typeof url==='string' || url===null) obj[GLOBAL_KEYS.url]=url; await chrome.storage.local.set(obj); }
 async function getPerTabMap(){ try{ const r=await chrome.storage.session.get(PT_KEY); return r[PT_KEY]||{}; }catch{ const r2=await chrome.storage.local.get(PT_KEY); return r2[PT_KEY]||{}; } }
@@ -92,11 +94,11 @@ async function applyForActive(tabId, windowId){
   const per = await getPerTab(tabId);
   const g = await getGlobal();
   if(per?.url){
-    try{ await chrome.sidePanel.setOptions({ tabId, path: per.url, enabled:true }); await chrome.sidePanel.open({ tabId }); }catch{}
+    try{ await chrome.sidePanel.setOptions({ tabId, path: panelPath(per.url), enabled:true }); }catch(e){ console.error('Unable to configure per-tab SideFlow', e); }
     return;
   }
   if(g.url){
-    try{ await chrome.sidePanel.setOptions({ path: g.url, enabled:true }); await chrome.sidePanel.open({ windowId }); }catch{}
+    try{ await chrome.sidePanel.setOptions({ tabId, path: panelPath(g.url), enabled:true }); }catch(e){ console.error('Unable to configure global SideFlow', e); }
     return;
   }
   try{ await chrome.sidePanel.setOptions({ tabId, enabled:false }); }catch{}
